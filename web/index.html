@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="/" />
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="Effortless Social Media Automation." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="apple-mobile-web-app-title" content="Blob" />
+  <meta name="theme-color" content="#004aad" />
+  <link rel="apple-touch-icon" href="icons/Icon-192.png" />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- Poppins for the loader text -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500&display=swap" rel="stylesheet" />
+
+  <!-- Preload app entrypoint -->
+  <link rel="preload" href="main.dart.js" as="script" />
+
+  <title>Blob</title>
+
+  <style>
+    :root{
+      /* brand */
+      --blob-navy: #004aad;
+      --bg: #ffffff;
+    }
+
+    /* Fullscreen centered overlay */
+    #app-skeleton{
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      font-family: 'Poppins', sans-serif;
+      background: var(--bg);
+      z-index: 9999;
+    }
+
+    .loading-text{
+      font-weight: 500;
+      font-size: 18px;
+      color: var(--blob-navy);
+    }
+
+    /* NEW MORPHING LOADER ----------------------------------------------- */
+    .dots{
+      --navy: var(--blob-navy);
+      --size: 160px;            /* stage size */
+      --dot: 5px;               /* base dot size */
+      --moveEase: cubic-bezier(.2,.8,.2,1);
+      --popEase: cubic-bezier(.3,1,.3,1);
+      --scaleMs: 180ms;         /* fast shrink duration */
+      position: relative;
+      width: var(--size); height: var(--size);
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      place-items: center;
+      transform-origin: center;
+    }
+
+    .dot{
+      inline-size: var(--dot);
+      block-size: var(--dot);
+      border-radius: 50%;
+      background: var(--navy);
+      translate: 0 0;
+      scale: 1;
+      transition:
+        translate 1s var(--moveEase) calc(var(--stagger, 0ms)),
+        scale var(--scaleMs) var(--popEase);
+      will-change: translate, scale;
+    }
+
+    /* travel enabled */
+    .go .dot{ translate: var(--tx, 0px) var(--ty, 0px); }
+
+    /* thickness mapping */
+    .thin  .dot{ scale: .62; }
+    .thick .dot{ scale: 1.22; }
+
+    /* hide overlay when app ready */
+    .hidden{ display: none !important; }
+
+    @media (prefers-reduced-motion: reduce){
+      .dot{ transition: none; translate: var(--tx,0px) var(--ty,0px); scale: 1; }
+    }
+  </style>
+
+  <!-- Keep the hide logic BEFORE bootstrap so the event is never missed -->
+  <script>
+    (function () {
+      var splash, hid = false;
+
+      function hideSplash() {
+        if (hid) return; hid = true;
+        splash = splash || document.getElementById('app-skeleton');
+        if (splash) splash.classList.add('hidden');
+      }
+
+      // Primary: first frame from Flutter
+      window.addEventListener('flutter-first-frame', hideSplash, { once: true });
+
+      // Fallback 1: detect Flutter DOM nodes appearing (HTML renderer => <flt-glass-pane>, CanvasKit => <canvas>)
+      var obs = new MutationObserver(function () {
+        if (document.querySelector('flt-glass-pane, canvas')) hideSplash();
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+
+      // Fallback 2: absolute safety
+      setTimeout(hideSplash, 15000);
+
+      // Optional: expose for debugging
+      // window.__hideSplash = hideSplash;
+    })();
+  </script>
+</head>
+<body>
+  <noscript><p>Blob requires JavaScript to run. Please enable JavaScript in your browser.</p></noscript>
+
+  <!-- Splash / Loader -->
+  <div id="app-skeleton" role="status" aria-label="Loading">
+    <div class="dots" id="dots" aria-hidden="true"></div>
+    <div class="loading-text" aria-live="polite">Loading Blob</div>
+  </div>
+
+  <!-- Morphing loader script (placed after DOM so #dots exists) -->
+  <script>
+  (function(){
+    const N = 64;            // 8x8 grid
+    const SIZE = 160;        // px
+    const CYCLE = 3000;      // 3.0s per morph
+    const MAX_STAGGER = 120; // ms
+    const SHAPE_SCALE = 1.12;/* expand shapes for more gap without changing grid */
+    const RUN_TESTS = false; // silence console in prod
+
+    const el = document.getElementById('dots');
+
+    // Build dots
+    for(let i=0;i<N;i++){ const d=document.createElement('i'); d.className='dot'; el.appendChild(d); }
+
+    // Grid geometry
+    const cols=8, rows=8, cell=SIZE/8, half=SIZE/2;
+    const grid = Array.from({length:N}, (_,i)=>{
+      const r = Math.floor(i/cols), c = i%cols;
+      return { i, r, c, gx: (c+0.5)*cell, gy: (r+0.5)*cell,
+        ring: Math.max(Math.abs(c-3.5), Math.abs(r-3.5)) };
+    });
+    const maxRing = Math.max(...grid.map(g=>g.ring)) || 1;
+    grid.forEach(g=>{
+      const st = (g.ring/maxRing)*MAX_STAGGER;
+      el.children[g.i].style.setProperty('--stagger', Math.round(st)+'ms');
+    });
+
+    const halfPx = SIZE/2;
+    const angle = (x,y)=>Math.atan2(y-halfPx, x-halfPx);
+    const sampleLine = (x1,y1,x2,y2,m)=>{
+      const out=[]; for(let i=0;i<m;i++){ const t=(i+0.5)/m; out.push([x1+(x2-x1)*t, y1+(y2-y1)*t]); } return out;
+    };
+    const sampleArc = (cx,cy,rx,ry,a0,a1,m)=>{
+      if (m<=0) return [];
+      const K = Math.max(8, m*6);
+      const xs = [], ys = [];
+      for(let i=0;i<=K;i++){
+        const t = i/K;
+        const a = a0 + (a1-a0)*t;
+        xs.push(cx + rx*Math.cos(a));
+        ys.push(cy + ry*Math.sin(a));
+      }
+      const dist=[0]; let total=0;
+      for(let i=1;i<=K;i++){
+        const dx=xs[i]-xs[i-1], dy=ys[i]-ys[i-1];
+        total += Math.hypot(dx,dy);
+        dist.push(total);
+      }
+      const out=[];
+      for(let j=0;j<m;j++){
+        const target = (j+0.5)/m * total;
+        let lo=0, hi=K;
+        while(lo<hi){ const mid=(lo+hi)>>1; if(dist[mid] < target) lo=mid+1; else hi=mid; }
+        const i1=Math.max(1,lo);
+        const segLen = dist[i1]-dist[i1-1] || 1;
+        const w = (target - dist[i1-1]) / segLen;
+        out.push([
+          xs[i1-1] + (xs[i1]-xs[i1-1])*w,
+          ys[i1-1] + (ys[i1]-ys[i1-1])*w,
+        ]);
+      }
+      return out;
+    };
+    const distributeSegments = (segs,total)=>{
+      const lens=segs.map(([x1,y1,x2,y2])=>Math.hypot(x2-x1,y2-y1));
+      const L=lens.reduce((a,b)=>a+b,0)||1;
+      let counts=lens.map(l=>Math.max(1,Math.round(total*l/L)));
+      let diff=counts.reduce((a,b)=>a+b,0)-total;
+      while(diff!==0){
+        const idx=counts.indexOf(Math.max(...counts));
+        counts[idx]+=diff>0?-1:1;
+        diff+=diff>0?-1:1;
+      }
+      const out=[]; segs.forEach(([x1,y1,x2,y2],i)=>out.push(...sampleLine(x1,y1,x2,y2,counts[i]))); return out;
+    };
+
+    const resampleEven = (pts, m, closed=true)=>{
+      if (m<=0) return [];
+      const P = pts.slice();
+      if (closed){
+        const a = P[0], b = P[P.length-1];
+        if (a[0]!==b[0] || a[1]!==b[1]) P.push([a[0],a[1]]);
+      }
+      if (P.length<2){ return Array.from({length:m}, ()=>[P[0][0], P[0][1]]); }
+      let total=0; const dist=[0];
+      for(let i=1;i<P.length;i++){
+        total += Math.hypot(P[i][0]-P[i-1][0], P[i][1]-P[i-1][1]);
+        dist.push(total);
+      }
+      const out=[];
+      for(let j=0;j<m;j++){
+        const target = (j+0.5)/m * total;
+        let lo=0, hi=dist.length-1;
+        while(lo<hi){ const mid=(lo+hi)>>1; if(dist[mid]<target) lo=mid+1; else hi=mid; }
+        const i1=Math.max(1,lo);
+        const seg = (dist[i1]-dist[i1-1]) || 1;
+        const t = (target - dist[i1-1]) / seg;
+        const ax=P[i1-1][0], ay=P[i1-1][1], bx=P[i1][0], by=P[i1][1];
+        out.push([ ax + (bx-ax)*t, ay + (by-ay)*t ]);
+      }
+      return out;
+    };
+
+    /* SHAPES */
+    function shapeAirplane(n){
+      const v = [
+        [.78,.50], [.60,.46], [.50,.38], [.40,.40],
+        [.32,.36], [.30,.49], [.22,.50], [.30,.51],
+        [.32,.64], [.40,.60], [.50,.62], [.60,.54]
+      ];
+      return resampleEven(v, n, true);
+    }
+    function shapeMessage(n){
+      const cx=.5, cy=.5, w=.52, h=.36, rad=.14;
+      const x1=cx-w/2, y1=cy-h/2, x2=cx+w/2, y2=cy+h/2;
+
+      const rough=[];
+      const arcPts = 28, edgePts = 24;
+      const sampleLine2 = sampleLine, sampleArc2 = sampleArc;
+
+      const tl = sampleArc2(x1+rad, y1+rad, rad,rad, Math.PI, Math.PI*1.5, arcPts);
+      const top = sampleLine2(x1+rad, y1, x2-rad, y1, edgePts);
+      const tr = sampleArc2(x2-rad, y1+rad, rad,rad, Math.PI*1.5, Math.PI*2, arcPts);
+      const right = sampleLine2(x2, y1+rad, x2, y2-rad, edgePts);
+      const br = sampleArc2(x2-rad, y2-rad, rad,rad, 0, Math.PI*.5, arcPts);
+
+      const tailL = x1 + w*0.20;
+      const tailTipX = x1 + w*0.10, tailTipY = y2 + h*0.18;
+      const bottomA = sampleLine2(x2-rad, y2, tailL, y2, edgePts);
+      const tail = [ [tailL,y2], [tailTipX,tailTipY], [x1 + w*0.30, y2 - h*0.04] ];
+      const bottomB = sampleLine2(x1 + w*0.30, y2 - h*0.04, x1+rad, y2 - 0, Math.max(6, edgePts*0.4));
+      const bl = sampleArc2(x1+rad, y2-rad, rad,rad, Math.PI*.5, Math.PI, arcPts);
+      const left = sampleLine2(x1, y2-rad, x1, y1+rad, edgePts);
+
+      [tl,top,tr,right,br,bottomA,tail,bottomB,bl,left].forEach(part=> rough.push(...part));
+      const hullCount = Math.round(n*0.64);
+      const hull = resampleEven(rough, hullCount, true);
+
+      const textLeft  = x1 + rad*0.8;
+      const textRight = x2 - rad*0.8;
+      const yLine1 = cy - h*0.10;
+      const yLine2 = cy + h*0.02;
+      const textRemain = Math.max(0, n - hull.length);
+      const line1Count = Math.floor(textRemain/2);
+      const line2Count = textRemain - line1Count;
+      const line1 = sampleLine2(textLeft, yLine1, textRight, yLine1, Math.max(0,line1Count));
+      const line2 = sampleLine2(textLeft, yLine2, textRight, yLine2, Math.max(0,line2Count));
+
+      return [...hull, ...line1, ...line2].slice(0,n);
+    }
+    function shapeGalaxy(n){
+      const cx=.5, cy=.5; const outer=.46, inner=.20, points=5;
+      const verts=[];
+      for(let i=0;i<points*2;i++){
+        const r = (i%2===0)? outer : inner;
+        const a = -Math.PI/2 + i*Math.PI/points;
+        verts.push([cx + r*Math.cos(a), cy + r*Math.sin(a)]);
+      }
+      return resampleEven(verts, n, true);
+    }
+    function shapeSmartEmoji(n){
+      const cx=.5, cy=.5, r=.48;
+      const face = sampleArc(cx,cy,r,r,0,Math.PI*2, Math.round(n*.58));
+      const eyeL = sampleArc(cx-.17, cy-.11, .04,.04, 0, Math.PI*2, Math.max(6,Math.round(n*.08)));
+      const eyeR = sampleArc(cx+.17, cy-.11, .04,.04, 0, Math.PI*2, Math.max(6,Math.round(n*.08)));
+      const glassTop = sampleLine(cx-.22, cy-.17, cx+.22, cy-.17, Math.max(4,Math.round(n*.06)));
+      const smile = sampleArc(cx, cy+.02, .20,.13, Math.PI*.15, Math.PI*.85, n - (face.length+eyeL.length+eyeR.length+glassTop.length));
+      return [...face, ...eyeL, ...eyeR, ...glassTop, ...smile].slice(0,n);
+    }
+    function shapeCoffee(n){
+      const cx=.5, cy=.5, w=.42, h=.28;
+      const x1=cx-w/2, y1=cy-h/2, x2=cx+w/2, y2=cy+h/2;
+      const rim = sampleLine(x1, y1, x2, y1, Math.round(n*.17));
+      const edges = [[x2,y1,x2,y2],[x2,y2,x1,y2],[x1,y2,x1,y1]];
+      const body = distributeSegments(edges, Math.round(n*.38));
+      const handle = sampleArc(x2+.05, cy, .09,.11, -Math.PI/3, Math.PI/3, Math.round(n*.22));
+      const steam = sampleArc(cx-.11, y1-.07, .02,.05, -Math.PI/2, 0, Math.max(3,Math.round(n*.05)))
+                  .concat(sampleArc(cx, y1-.07, .02,.06, -Math.PI/2, 0, Math.max(3,Math.round(n*.05))));
+      const remain = n - (rim.length+body.length+handle.length+steam.length);
+      const fill = remain>0 ? sampleLine(cx, y2, cx, y2, remain) : [];
+      return [...rim, ...body, ...handle, ...steam, ...fill].slice(0,n);
+    }
+
+    const shapes = [shapeAirplane, shapeMessage, shapeGalaxy, shapeSmartEmoji, shapeCoffee];
+
+    const gridSorted = grid.slice().sort((a,b)=> {
+      const da = angle(a.gx,a.gy), db = angle(b.gx,b.gy);
+      return da===db ? (Math.hypot(a.gx-half,a.gy-half) - Math.hypot(b.gx-half,b.gy-half)) : (da - db);
+    });
+
+    function buildPoints(shapeFn){
+      let pts = shapeFn(N).map(([x,y])=>[x*SIZE, y*SIZE]);
+      const s = SHAPE_SCALE;
+      return pts.map(([X,Y])=>[ half + (X - half) * s, half + (Y - half) * s ]);
+    }
+
+    function assignTargets(ptsPx){
+      const ptsSorted = ptsPx.slice().sort((A,B)=>{
+        const da = angle(A[0],A[1]), db = angle(B[0],B[1]);
+        return da===db ? (Math.hypot(A[0]-half,A[1]-half) - Math.hypot(B[0]-half,B[1]-half)) : (da - db);
+      });
+
+      const minOff = Math.floor(N/3), maxOff = Math.floor(N*2/3);
+      const off = Math.floor(minOff + Math.random()*(maxOff-minOff+1));
+      const rev = Math.random() < 0.5;
+
+      for(let k=0;k<N;k++){
+        const idx = (k + off) % N;
+        const p = rev ? ptsSorted[N-1-idx] : ptsSorted[idx];
+        const g = gridSorted[k];
+        const tx = p[0] - g.gx, ty = p[1] - g.gy;
+        const dot = el.children[g.i];
+        dot.style.setProperty('--tx', tx.toFixed(1)+'px');
+        dot.style.setProperty('--ty', ty.toFixed(1)+'px');
+      }
+    }
+
+    let index = 0, first = true;
+
+    function morphTo(i){
+      const fn = shapes[i % shapes.length];
+      const pts = buildPoints(fn);
+
+      if (first){
+        assignTargets(pts);
+        el.classList.add('go');
+        el.style.setProperty('--scaleMs', '180ms');
+        el.classList.add('thin');
+        setTimeout(()=>{
+          el.style.setProperty('--scaleMs', '520ms');
+          el.classList.add('thick');
+          el.classList.remove('thin');
+        }, 900);
+        first = false;
+      } else {
+        el.style.setProperty('--scaleMs', '180ms');
+        el.classList.remove('thick');
+        el.classList.add('thin');
+        assignTargets(pts);
+        setTimeout(()=>{
+          el.style.setProperty('--scaleMs', '520ms');
+          el.classList.add('thick');
+          el.classList.remove('thin');
+        }, 900);
+      }
+    }
+
+    // Kick off
+    morphTo(index++);
+    setInterval(()=> morphTo(index++), CYCLE);
+  })();
+  </script>
+
+  <!-- Flutter bootstrap (defer so the loader script above runs first) -->
+  <script src="flutter_bootstrap.js" defer></script>
+</body>
+</html>

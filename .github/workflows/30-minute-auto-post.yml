@@ -1,0 +1,27 @@
+name: Auto Post Every 30 Minutes
+
+on:
+  schedule:
+    - cron: '0,30 * * * *'  # ⏰ every 30 minutes
+  workflow_dispatch:         # 🧪 manual trigger allowed
+
+jobs:
+  run-auto-post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Supabase Edge Function - auto-post
+        run: |
+          curl -X POST https://ehgginqelbgrzfrzbmis.supabase.co/functions/v1/auto-post \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+          -H "Content-Type: application/json" \
+          -d '{}'
+
+  run-auto-post-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Supabase Edge Function - auto-post-images
+        run: |
+          curl -X POST https://ehgginqelbgrzfrzbmis.supabase.co/functions/v1/auto-post-images \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+          -H "Content-Type: application/json" \
+          -d '{}'

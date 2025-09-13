@@ -1,0 +1,18 @@
+name: Mark Expired LinkedIn Tokens
+
+on:
+  schedule:
+    - cron: '30 20 * * *'  # ⏰ 02:00 IST daily (20:30 UTC)
+  workflow_dispatch:       # 🧪 manual trigger allowed
+
+jobs:
+  run-sql-function:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call SQL function to flag expired tokens
+        run: |
+          curl -X POST 'https://ehgginqelbgrzfrzbmis.supabase.co.supabase.co/rest/v1/rpc/mark_expired_linkedin_tokens' \
+          -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          -H "Content-Type: application/json" \
+          -d '{}'
