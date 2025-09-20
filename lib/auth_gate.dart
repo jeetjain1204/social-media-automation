@@ -53,7 +53,7 @@ class _AuthGateState extends State<AuthGate> {
           if (showFallback) showFallback = false;
         });
 
-        // OPT: Cancel fallback timer once we have a resolution
+        // FIXED: Cancel fallback timer once we have a resolution
         fallbackTimer?.cancel();
         fallbackTimer = null;
       });
@@ -73,9 +73,11 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   void dispose() {
-    // OPT: Prevent leaks and late callbacks
+    // FIXED: Ensure all subscriptions and timers are properly disposed
     authSub?.cancel();
+    authSub = null;
     fallbackTimer?.cancel();
+    fallbackTimer = null;
     super.dispose();
   }
 

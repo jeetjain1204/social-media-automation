@@ -6,9 +6,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+import 'package:blob/config/app_config.dart';
 
 /// Source of truth for the encryption key:
+/// - Uses AppConfig for centralized configuration
 /// - Prefer compile-time `--dart-define=ENCRYPTION_KEY`
 /// - Fallback to runtime `.env` via flutter_dotenv
 ///
@@ -16,20 +18,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 /// - Provide at least 32 bytes of entropy. We derive a 256-bit key via HKDF
 ///   to normalize length and avoid weak short keys.
 /// - DO NOT check this into source control; never log this value.
-final String rawKey = (() {
-  // OPT: Read once; avoid calling const String.fromEnvironment twice.
-  final defineValue = const String.fromEnvironment('ENCRYPTION_KEY');
-  if (defineValue.isNotEmpty) return defineValue;
-
-  final envValue = dotenv.env['ENCRYPTION_KEY'];
-  if (envValue == null || envValue.isEmpty) {
-    // OPT: Fail fast with clear guidance.
-    throw StateError(
-      'Missing ENCRYPTION_KEY. Supply via --dart-define or .env at runtime.',
-    );
-  }
-  return envValue;
-})();
+final String rawKey = AppConfig.encryptionKey;
 
 /// Decrypts a base64-encoded blob in the framing:
 /// [12-byte IV][ciphertext][16-byte GCM tag]

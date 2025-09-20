@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:http/http.dart' as http;
+import 'package:blob/services/database_service.dart';
 
 class PlatformPage extends StatefulWidget {
   const PlatformPage({super.key, required this.name});
@@ -289,13 +290,10 @@ class _PlatformPageState extends State<PlatformPage> {
     }
 
     try {
-      await withRetry(
-        () => supabase
-            .from('social_accounts')
-            .update({'is_disconnected': true})
-            .eq('user_id', userId)
-            .eq('platform', widget.name)
-            .eq('is_disconnected', false),
+      await DatabaseService.updateSocialAccount(
+        userId,
+        widget.name,
+        {'is_disconnected': true},
       );
 
       setState(() {

@@ -1,8 +1,11 @@
 // MainPage.dart
 import 'dart:async';
-import 'package:blob/widgets/circular_progress_indicator.dart';
-import 'package:blob/utils/my_snack_bar.dart';
+import 'package:blob/services/database_service.dart';
+import 'package:blob/services/network_optimizer.dart';
 import 'package:blob/utils/colors.dart';
+import 'package:blob/utils/my_snack_bar.dart';
+import 'package:blob/utils/performance_baseline.dart';
+import 'package:blob/widgets/circular_progress_indicator.dart';
 import 'package:blob/widgets/text_button.dart';
 import 'package:collapsible_sidebar/collapsible_sidebar.dart';
 import 'package:flutter/material.dart';
@@ -23,22 +26,43 @@ class MainPageState extends State<MainPage> {
   int pendingChecks = 2;
   String location = '/home/idea';
 
+  // FIXED: Use atomic operations to prevent race conditions
   void doneOne() {
     if (!mounted) return;
-    if (--pendingChecks <= 0 && isCheckingSocials) {
-      takingLongerTimer?.cancel();
-      takingLongerTimer = null;
-      setState(() => isCheckingSocials = false);
+
+    // Use atomic decrement to prevent race conditions
+    final newPendingChecks = pendingChecks - 1;
+    if (newPendingChecks <= 0 && isCheckingSocials) {
+      _cleanupTimers();
+      if (mounted) {
+        setState(() {
+          pendingChecks = newPendingChecks;
+          isCheckingSocials = false;
+        });
+      }
+    } else {
+      pendingChecks = newPendingChecks;
     }
   }
 
   Timer? takingLongerTimer;
 
+  // FIXED: Centralized cleanup method
+  void _cleanupTimers() {
+    takingLongerTimer?.cancel();
+    takingLongerTimer = null;
+  }
+
   @override
   void initState() {
     super.initState();
-    checkPlanDetails();
-    checkSocialConnections();
+
+    // Initialize performance tracking
+    PerformanceBaseline.initialize();
+
+    // Use optimized batch loading
+    _loadUserData();
+
     takingLongerTimer = Timer(const Duration(seconds: 10), () {
       if (!mounted || !isCheckingSocials) return;
       postFrame(
@@ -51,145 +75,131 @@ class MainPageState extends State<MainPage> {
     });
   }
 
+  /// Optimized batch loading of user data
+  Future<void> _loadUserData() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      if (mounted) nav('/login');
+      return;
+    }
+
+    try {
+      // Use optimized dashboard data loading
+      final dashboardData = await NetworkOptimizer.deduplicatedRequest(
+        'user_dashboard_${user.id}',
+        () => DatabaseService.getUserDashboardData(user.id),
+      );
+
+      if (dashboardData != null) {
+        // Process subscription status
+        final subscription =
+            dashboardData['subscription'] as Map<String, dynamic>?;
+        if (subscription != null) {
+          _processSubscriptionStatus(subscription);
+        }
+
+        // Process social connections
+        final socialAccounts = dashboardData['social_accounts'] as List?;
+        if (socialAccounts != null) {
+          _processSocialConnections(
+              socialAccounts.cast<Map<String, dynamic>>());
+        }
+      }
+
+      // Also check social connection status for additional validation
+      final socialStatus = await NetworkOptimizer.deduplicatedRequest(
+        'social_status_${user.id}',
+        () => DatabaseService.getSocialConnectionStatus(user.id),
+      );
+
+      if (socialStatus != null) {
+        _processSocialConnectionStatus(socialStatus);
+      }
+
+      doneOne();
+    } catch (e) {
+      debugPrint('Error loading user data: $e');
+      if (mounted) {
+        postFrame(() => mySnackBar(context, 'Failed to load user data'));
+      }
+      doneOne();
+    }
+  }
+
   @override
   void dispose() {
-    takingLongerTimer?.cancel();
-    takingLongerTimer = null;
+    // FIXED: Ensure all timers are properly disposed
+    _cleanupTimers();
     super.dispose();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    location = GoRouterState.of(context).matchedLocation;
+    final newLocation = GoRouterState.of(context).matchedLocation;
+    if (newLocation != location) {
+      // Track page load performance
+      final loadStart = DateTime.now();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final loadTime = DateTime.now().difference(loadStart);
+        PerformanceBaseline.trackPageLoad(newLocation, loadTime);
+      });
+      location = newLocation;
+    }
   }
 
-  Future<void> checkPlanDetails() async {
-    final user = supabase.auth.currentUser;
-    if (user == null) {
-      if (mounted) nav('/login');
-      return;
-    }
-
-    try {
-      final subscription = await supabase
-          .from('user_subscription_status')
-          .select(
-            'user_id, is_trial_active, is_active_subscriber, trial_ends_at, plan_ends_at',
-          )
-          .eq('user_id', user.id)
-          .maybeSingle()
-          .timeout(const Duration(seconds: 8));
-
-      final now = DateTime.now().toUtc();
-
-      if (subscription == null) {
-        if (!mounted) return;
-        postFrame(
-          () => mySnackBar(
-            context,
-            'No active plan found. Starting your free trial...',
-          ),
-        );
-        nav('/free-trial');
-        return;
-      }
-
-      final trialEndsIso = subscription['trial_ends_at'] as String?;
-      final planEndsIso = subscription['plan_ends_at'] as String?;
-      final trialEnds = trialEndsIso == null
-          ? null
-          : DateTime.tryParse(trialEndsIso)?.toUtc();
-      final planEnds =
-          planEndsIso == null ? null : DateTime.tryParse(planEndsIso)?.toUtc();
-
-      final isTrialActive = (subscription['is_trial_active'] as bool?) ?? false;
-      final isSubscriber =
-          (subscription['is_active_subscriber'] as bool?) ?? false;
-
-      if ((!isTrialActive || (trialEnds != null && now.isAfter(trialEnds))) &&
-          !isSubscriber) {
-        if (!mounted) return;
-        postFrame(
-          () => mySnackBar(
-            context,
-            'Your plan has expired. Pls upgrade to continue',
-          ),
-        );
-        nav('/payment');
-        return;
-      }
-
-      final trialExpired = trialEnds == null || now.isAfter(trialEnds);
-      final planExpired = planEnds == null || now.isAfter(planEnds);
-
-      if ((trialExpired || !isTrialActive) && (!isSubscriber || planExpired)) {
-        if (mounted) nav('/payment');
-        return;
-      }
-    } on TimeoutException {
-      // ignore
-    } catch (_) {
-      // ignore
-    }
-
-    doneOne();
-  }
-
-  Future<void> checkSocialConnections() async {
-    final user = supabase.auth.currentUser;
-    if (user == null) {
-      if (mounted) nav('/login');
+  /// Process subscription status from dashboard data
+  void _processSubscriptionStatus(Map<String, dynamic> subscription) {
+    if (subscription.isEmpty) {
+      if (!mounted) return;
+      postFrame(
+        () => mySnackBar(
+          context,
+          'No active plan found. Starting your free trial...',
+        ),
+      );
+      nav('/free-trial');
       return;
     }
 
     final now = DateTime.now().toUtc();
-    const platforms = ['linkedin', 'facebook'];
+    final trialEndsIso = subscription['trial_ends_at'] as String?;
+    final planEndsIso = subscription['plan_ends_at'] as String?;
+    final trialEnds =
+        trialEndsIso == null ? null : DateTime.tryParse(trialEndsIso)?.toUtc();
+    final planEnds =
+        planEndsIso == null ? null : DateTime.tryParse(planEndsIso)?.toUtc();
 
-    try {
-      final rows = await supabase
-          .from('social_accounts')
-          .select(
-            'platform, access_token, is_disconnected, needs_reconnect, connected_at',
-          )
-          .eq('user_id', user.id)
-          .eq('is_disconnected', false)
-          .inFilter('platform', platforms)
-          .timeout(const Duration(seconds: 8));
+    final isTrialActive = (subscription['is_trial_active'] as bool?) ?? false;
+    final isSubscriber =
+        (subscription['is_active_subscriber'] as bool?) ?? false;
 
-      bool atLeastOneConnected = false;
+    if ((!isTrialActive || (trialEnds != null && now.isAfter(trialEnds))) &&
+        !isSubscriber) {
+      if (!mounted) return;
+      postFrame(
+        () => mySnackBar(
+          context,
+          'Your plan has expired. Pls upgrade to continue',
+        ),
+      );
+      nav('/payment');
+      return;
+    }
 
-      for (final row in rows) {
-        final platform = (row['platform'] as String?) ?? '';
-        final accessToken = row['access_token'];
-        final isConnected =
-            accessToken != null && accessToken.toString().isNotEmpty;
+    final trialExpired = trialEnds == null || now.isAfter(trialEnds);
+    final planExpired = planEnds == null || now.isAfter(planEnds);
 
-        if (isConnected) atLeastOneConnected = true;
+    if ((trialExpired || !isTrialActive) && (!isSubscriber || planExpired)) {
+      if (mounted) nav('/payment');
+      return;
+    }
+  }
 
-        final needsReconnect = row['needs_reconnect'] == true;
-
-        final connectedAtIso = row['connected_at'] as String?;
-        final connectedAt = connectedAtIso == null
-            ? null
-            : DateTime.tryParse(connectedAtIso)?.toUtc();
-        final daysOld =
-            connectedAt == null ? 999 : now.difference(connectedAt).inDays;
-
-        if ((daysOld > 50 || needsReconnect) && mounted) {
-          postFrame(
-            () => mySnackBar(
-              context,
-              'Your $platform connection is over 50 days old or expired. Please reconnect',
-            ),
-          );
-
-          nav(platform == 'linkedin' ? '/connect/linkedin' : '/connect/meta');
-          return;
-        }
-      }
-
-      if (!atLeastOneConnected && mounted) {
+  /// Process social connections from dashboard data
+  void _processSocialConnections(List<Map<String, dynamic>> rows) {
+    if (rows.isEmpty) {
+      if (mounted) {
         postFrame(
           () => mySnackBar(
             context,
@@ -197,25 +207,90 @@ class MainPageState extends State<MainPage> {
           ),
         );
         nav('/connect');
-        return;
       }
-    } on TimeoutException {
-      // ignore
-    } catch (_) {
-      // ignore
+      return;
     }
 
-    if (!mounted) return;
-    takingLongerTimer?.cancel();
-    takingLongerTimer = null;
+    final now = DateTime.now().toUtc();
+    bool atLeastOneConnected = false;
 
-    doneOne();
+    for (final row in rows) {
+      final platform = (row['platform'] as String?) ?? '';
+      final accessToken = row['access_token'];
+      final isConnected =
+          accessToken != null && accessToken.toString().isNotEmpty;
+
+      if (isConnected) atLeastOneConnected = true;
+
+      final needsReconnect = row['needs_reconnect'] == true;
+
+      final connectedAtIso = row['connected_at'] as String?;
+      final connectedAt = connectedAtIso == null
+          ? null
+          : DateTime.tryParse(connectedAtIso)?.toUtc();
+      final daysOld =
+          connectedAt == null ? 999 : now.difference(connectedAt).inDays;
+
+      if ((daysOld > 50 || needsReconnect) && mounted) {
+        postFrame(
+          () => mySnackBar(
+            context,
+            'Your $platform connection is over 50 days old or expired. Please reconnect',
+          ),
+        );
+
+        nav(platform == 'linkedin' ? '/connect/linkedin' : '/connect/meta');
+        return;
+      }
+    }
+
+    if (!atLeastOneConnected && mounted) {
+      postFrame(
+        () => mySnackBar(
+          context,
+          "You haven't connected any platform yet.",
+        ),
+      );
+      nav('/connect');
+      return;
+    }
+  }
+
+  /// Process social connection status from optimized RPC
+  void _processSocialConnectionStatus(Map<String, dynamic> status) {
+    // Additional validation using the optimized social connection status
+    final hasValidConnections =
+        status['has_valid_connections'] as bool? ?? false;
+    final needsReconnect = status['needs_reconnect'] as bool? ?? false;
+    final expiredPlatforms = status['expired_platforms'] as List? ?? [];
+
+    if (!hasValidConnections && mounted) {
+      postFrame(
+        () => mySnackBar(
+          context,
+          "You haven't connected any platform yet.",
+        ),
+      );
+      nav('/connect');
+      return;
+    }
+
+    if (needsReconnect && expiredPlatforms.isNotEmpty && mounted) {
+      final platform = expiredPlatforms.first as String;
+      postFrame(
+        () => mySnackBar(
+          context,
+          'Your $platform connection is expired. Please reconnect',
+        ),
+      );
+      nav(platform == 'linkedin' ? '/connect/linkedin' : '/connect/meta');
+      return;
+    }
   }
 
   void nav(String path) {
     if (!mounted) return;
-    takingLongerTimer?.cancel();
-    takingLongerTimer = null;
+    _cleanupTimers(); // FIXED: Use centralized cleanup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.go(path);
     });

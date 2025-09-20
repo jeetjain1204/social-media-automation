@@ -29,13 +29,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   bool ready = false;
   late List<Widget Function(BrandProfileDraft)> flowSteps;
 
-  // OPT: guard edges to avoid overflow/underflow without changing normal behavior.
-  void next() => setState(() {
-        if (currentStep < flowSteps.length - 1) currentStep++; // OPT
-      });
-  void back() => setState(() {
-        if (currentStep > 0) currentStep--; // OPT
-      });
+  // FIXED: Use atomic operations to prevent race conditions
+  void next() {
+    if (!mounted) return;
+    setState(() {
+      if (currentStep < flowSteps.length - 1) {
+        currentStep++;
+      }
+    });
+  }
+
+  void back() {
+    if (!mounted) return;
+    setState(() {
+      if (currentStep > 0) {
+        currentStep--;
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -260,7 +271,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
     steps.add((_) => const DoneStep()); // always end with Done
 
-    if (!mounted) return; // OPT: lifecycle safety
+    if (!mounted) return;
     setState(() {
       flowSteps = steps;
       ready = true;

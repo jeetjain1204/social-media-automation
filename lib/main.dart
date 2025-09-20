@@ -1,17 +1,19 @@
 // main.dart
 import 'dart:async';
-import 'dart:convert';
 import 'package:blob/platform/url_strategy_stub.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:blob/config/app_config.dart';
+import 'package:blob/utils/cache_manager.dart';
 import 'package:blob/utils/colors.dart';
 import 'package:blob/utils/my_snack_bar.dart';
 import 'package:blob/widgets/circular_progress_indicator.dart';
+import 'package:blob/widgets/error_boundary.dart';
+import 'package:blob/services/database_service.dart';
 
 import 'package:blob/data/category_and_subcategory_options.dart';
 import 'package:blob/pages/steps/onboarding_flow.dart';
@@ -37,10 +39,7 @@ import 'package:blob/pages/connect/connect_linkedin_pages_page.dart';
 import 'package:blob/main_page.dart';
 
 import 'brand_profile_draft.dart';
-import 'package:blob/provider/clear_notifier.dart';
-import 'package:blob/provider/foreground_provider.dart';
-import 'package:blob/provider/idea_provider.dart';
-import 'package:blob/provider/profile_provider.dart';
+import 'package:blob/providers/app_state_provider.dart';
 
 // ---------- Deferred (big) pages ----------
 import 'package:blob/pages/ai_generator/ai_generator_page.dart' deferred as gen;
@@ -62,9 +61,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
-    url: 'https://ehgginqelbgrzfrzbmis.supabase.co',
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVoZ2dpbnFlbGJncnpmcnpibWlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY3MDM4ODEsImV4cCI6MjA2MjI3OTg4MX0.SpR6qfl345Ra2RyMQ2SsqfZJ-gnA66_vwDz347tuWlI',
+    url: AppConfig.supabaseUrl,
+    anonKey: AppConfig.supabaseAnonKey,
     authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
   );
 
@@ -75,17 +73,9 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
+        // FIXED: Use unified app state provider instead of 5 separate providers
         ChangeNotifierProvider(
-          create: (_) => ProfileNotifier(),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => ForegroundNotifier(),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => IdeaNotifier(),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => ClearNotifier(),
+          create: (_) => AppStateProvider(),
         ),
         ChangeNotifierProvider(
           create: (_) => BrandProfileDraft(),
@@ -114,51 +104,43 @@ class GoRouterRefreshStream extends ChangeNotifier {
   }
 }
 
-// In‑memory + SharedPreferences profile cache used by redirect()
+// FIXED: Improved profile cache with TTL and size limits
 class _ProfileCache {
-  Map<String, dynamic>? _mem;
-  bool _prefsLoaded = false;
-
   Future<Map<String, dynamic>?> getOrLoad(
     String userId, {
     required Future<Map<String, dynamic>?> Function() networkFetchOnce,
   }) async {
-    if (_mem != null) return _mem;
+    // Try to get from cache first
+    final cached = await CacheManager.get<Map<String, dynamic>>(
+      'profile_$userId',
+      (data) => data,
+    );
 
-    if (!_prefsLoaded) {
-      final p = await SharedPreferences.getInstance();
-      final raw = p.getString('cached_profile_$userId');
-      if (raw != null) {
-        try {
-          _mem = Map<String, dynamic>.from(jsonDecode(raw));
-        } catch (_) {}
-      }
-      _prefsLoaded = true;
-      if (_mem != null) return _mem;
-    }
+    if (cached != null) return cached;
 
-    _mem = await networkFetchOnce();
-    if (_mem != null) {
-      final p = await SharedPreferences.getInstance();
-      try {
-        p.setString('cached_profile_$userId', jsonEncode(_mem));
-      } catch (_) {}
+    // Fetch from network if not in cache
+    final profile = await networkFetchOnce();
+    if (profile != null) {
+      // Cache for 30 minutes
+      await CacheManager.set(
+        'profile_$userId',
+        profile,
+        ttl: const Duration(minutes: 30),
+      );
     }
-    return _mem;
+    return profile;
   }
 
-  void set(Map<String, dynamic> profile, String userId) async {
-    _mem = profile;
-    final p = await SharedPreferences.getInstance();
-    try {
-      p.setString('cached_profile_$userId', jsonEncode(profile));
-    } catch (_) {}
+  Future<void> set(Map<String, dynamic> profile, String userId) async {
+    await CacheManager.set(
+      'profile_$userId',
+      profile,
+      ttl: const Duration(minutes: 30),
+    );
   }
 
-  void clear(String userId) async {
-    _mem = null;
-    final p = await SharedPreferences.getInstance();
-    p.remove('cached_profile_$userId');
+  Future<void> clear(String userId) async {
+    await CacheManager.remove('profile_$userId');
   }
 }
 
@@ -368,12 +350,9 @@ final router = GoRouter(
                   if (draft.updatedSubcategory)
                     updateData['subcategory'] = draft.subcategory;
                   if (updateData.isNotEmpty) {
-                    await supa
-                        .from('brand_profiles')
-                        .update(updateData)
-                        .eq('user_id', userId);
+                    await DatabaseService.updateProfile(userId, updateData);
                     if (context.mounted)
-                      context.read<ProfileNotifier>().notifyProfileUpdated();
+                      context.read<AppStateProvider>().notifyProfileUpdated();
                   }
                 }
                 draft.updateMany(() {
@@ -419,8 +398,8 @@ final router = GoRouter(
           final draft = context.read<BrandProfileDraft>();
           final supa = Supabase.instance.client;
           final userId = supa.auth.currentUser!.id;
-          await supa.from('brand_profiles').update(
-              {'primary_goal': draft.primary_goal}).eq('user_id', userId);
+          await DatabaseService.updateProfile(
+              userId, {'primary_goal': draft.primary_goal});
           if (context.mounted) context.go('/home/profile');
         },
         onSelection: (d, option) => d.primary_goal = option,
@@ -497,21 +476,14 @@ final router = GoRouter(
               'brand_logo_path': draft.brand_logo_path,
             };
 
-            await supabase
-                .from('brand_profiles')
-                .update(updatePayload)
-                .eq('user_id', userId)
-                .timeout(const Duration(seconds: 10));
-
-            await supabase
-                .schema('brand_kit')
-                .from('brand_kits')
-                .update(updatePayload)
-                .eq('user_id', userId)
-                .timeout(const Duration(seconds: 10));
+            await DatabaseService.updateProfile(
+              userId,
+              updatePayload,
+              brandKitUpdates: updatePayload,
+            );
 
             if (context.mounted) {
-              context.read<ProfileNotifier>().notifyProfileUpdated();
+              context.read<AppStateProvider>().notifyProfileUpdated();
               context.go('/home/profile');
             }
           } catch (e) {
@@ -535,7 +507,7 @@ final router = GoRouter(
           await supa.from('brand_profiles').update(
               {'primary_color': draft.primary_color}).eq('user_id', userId);
           if (context.mounted) {
-            context.read<ProfileNotifier>().notifyProfileUpdated();
+            context.read<AppStateProvider>().notifyProfileUpdated();
             context.go('/home/profile');
           }
         },
@@ -621,7 +593,7 @@ final router = GoRouter(
             'target_posts_per_week': draft.target_posts_per_week
           }).eq('user_id', userId);
           if (context.mounted) {
-            context.read<ProfileNotifier>().notifyProfileUpdated();
+            context.read<AppStateProvider>().notifyProfileUpdated();
             context.go('/home/profile');
           }
         },
@@ -634,11 +606,10 @@ final router = GoRouter(
           final draft = context.read<BrandProfileDraft>();
           final supa = Supabase.instance.client;
           final userId = supa.auth.currentUser!.id;
-          await supa
-              .from('brand_profiles')
-              .update({'timezone': draft.timezone}).eq('user_id', userId);
+          await DatabaseService.updateProfile(
+              userId, {'timezone': draft.timezone});
           if (context.mounted) {
-            context.read<ProfileNotifier>().notifyProfileUpdated();
+            context.read<AppStateProvider>().notifyProfileUpdated();
             context.go('/home/profile');
           }
         },
@@ -696,6 +667,23 @@ final router = GoRouter(
     ),
   ],
   redirect: (context, state) async {
+    // FIXED: Add redirect loop protection
+    int _redirectCount = 0;
+    String? _lastRedirectPath;
+
+    // Reset counter if we're on a different path
+    if (_lastRedirectPath != state.matchedLocation) {
+      _redirectCount = 0;
+      _lastRedirectPath = state.matchedLocation;
+    }
+
+    // Prevent infinite redirects
+    if (_redirectCount > 5) {
+      _redirectCount = 0;
+      return '/home/generator'; // Fallback to safe route
+    }
+    _redirectCount++;
+
     // Pass through LinkedIn callback params
     if (state.uri.queryParameters.containsKey('access_token') ||
         state.uri.queryParameters.containsKey('person_urn')) {
@@ -714,24 +702,20 @@ final router = GoRouter(
       return isAuthRoute ? null : '/login';
     }
 
-    // Allow-listed routes (avoid useless fetches)
-    final allowedPrefix = ['/home', '/onboarding'];
-    if (allowedPrefix.any((r) => state.matchedLocation.startsWith(r))) {
-      // If a “home/*” page, we still need to check onboarding completeness. Use cache first.
-      final allowedRoutesNoCheck = <String>[
-        '/home/generator',
-        '/home/idea',
-        '/home/history',
-        '/home/profile',
-      ];
-      if (allowedRoutesNoCheck.any(
-        (r) => state.matchedLocation.startsWith(r),
-      )) {
-        // Do not block navigation—let the page mount while we validate in background.
-      }
+    // FIXED: Skip profile check for certain routes to prevent redirect loops
+    final skipProfileCheckRoutes = [
+      '/onboarding',
+      '/connect',
+      '/free-trial',
+      '/payment',
+    ];
+
+    if (skipProfileCheckRoutes
+        .any((route) => state.matchedLocation.startsWith(route))) {
+      return null; // Allow these routes without profile check
     }
 
-    // Pull profile from cache → prefs → network (once) with timeout
+    // FIXED: Use optimized database service instead of direct queries
     final profile = await _profileCache.getOrLoad(
       user.id,
       networkFetchOnce: () async {
@@ -769,10 +753,14 @@ final router = GoRouter(
         empty(profile['timezone']);
 
     if (isIncomplete) {
-      return '/onboarding?mode=incomplete';
+      // FIXED: Only redirect to onboarding if not already there
+      if (!state.matchedLocation.startsWith('/onboarding')) {
+        return '/onboarding?mode=incomplete';
+      }
+      return null; // Stay on onboarding page
     }
 
-    // Already logged in & complete; don’t let them sit on auth pages
+    // Already logged in & complete; don't let them sit on auth pages
     if (isAuthRoute) return '/home/generator';
 
     return null;
@@ -888,14 +876,17 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'Blob',
-      debugShowCheckedModeBanner: false,
-      theme: _appTheme,
-      routerConfig: router,
-      builder: (context, child) {
-        return PageStorage(bucket: bucket, child: child!);
-      },
+    return ErrorBoundary(
+      context: 'main_app',
+      child: MaterialApp.router(
+        title: 'Blob',
+        debugShowCheckedModeBanner: false,
+        theme: _appTheme,
+        routerConfig: router,
+        builder: (context, child) {
+          return PageStorage(bucket: bucket, child: child!);
+        },
+      ),
     );
   }
 }

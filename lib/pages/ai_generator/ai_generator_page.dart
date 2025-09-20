@@ -18,6 +18,7 @@ import 'package:blob/widgets/my_switch.dart';
 import 'package:blob/widgets/my_textfield.dart';
 import 'package:blob/utils/show_platform_picker.dart';
 import 'package:blob/widgets/text_button.dart';
+import 'package:blob/services/ai_cost_controller.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -557,6 +558,15 @@ class _AIGeneratorPageState extends State<AIGeneratorPage> {
       return;
     }
 
+    // Check AI cost limits before generation
+    final canGenerate =
+        await AICostController.canMakeRequest(user.id, 'gpt-3.5-turbo');
+    if (!canGenerate) {
+      setState(() => isLoading = false);
+      return mySnackBar(context,
+          'Daily AI generation limit reached. Please upgrade your plan.');
+    }
+
     final profile = await supabase
         .from('brand_profiles')
         .select(
@@ -577,6 +587,32 @@ class _AIGeneratorPageState extends State<AIGeneratorPage> {
       'target_posts_per_week': profile?['target_posts_per_week'],
       'timezone': profile?['timezone'] ?? '',
     };
+
+    // Check cache first
+    final contextData = {
+      'platform': selectedPlatforms.join(', '),
+      'tone': tone,
+      'length': length,
+      'generate_from_news': isNewsSelected,
+      'profile': profileData,
+      'news_age_window': newsDuration,
+      'allow_emojis': allowEmojis,
+      'allow_hashtags': allowHashtags,
+    };
+
+    final cachedResult = await AICostController.getCachedResult(
+      textPromptController.text,
+      contextData,
+      'gpt-3.5-turbo',
+    );
+
+    if (cachedResult != null) {
+      setState(() {
+        generated = cachedResult;
+        isLoading = false;
+      });
+      return;
+    }
 
     try {
       final session = supabase.auth.currentSession;
@@ -607,8 +643,23 @@ class _AIGeneratorPageState extends State<AIGeneratorPage> {
       });
 
       final data = jsonDecode(res.body);
+      final caption = data['caption'] ?? 'Error generating';
+
+      // Cache the result
+      await AICostController.cacheResult(
+        textPromptController.text,
+        contextData,
+        'gpt-3.5-turbo',
+        caption,
+      );
+
+      // Track token usage (estimate)
+      final estimatedTokens =
+          (textPromptController.text.length + caption.length) ~/ 4;
+      AICostController.trackTokenUsage('gpt-3.5-turbo', estimatedTokens);
+
       setState(() {
-        generated = data['caption'] ?? 'Error generating';
+        generated = caption;
         isLoading = false;
       });
 

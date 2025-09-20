@@ -1,8 +1,9 @@
-import 'dart:async'; // OPT: For TimeoutException handling in DB checks
+import 'dart:async';
 
 import 'package:blob/utils/colors.dart';
-import 'package:blob/widgets/my_button.dart';
+import 'package:blob/utils/error_handler.dart';
 import 'package:blob/utils/my_snack_bar.dart';
+import 'package:blob/widgets/my_button.dart';
 import 'package:blob/widgets/text_button.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -45,95 +46,99 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> login() async {
-    if (isLoading) return; // OPT: Debounce double taps
+    if (isLoading) return;
     if (mounted) setState(() => isLoading = true);
 
     final email = emailController.text.trim();
     final password = passwordController.text;
 
-    // OPT: Keep validation lightweight; same UX but faster short‑circuit.
+    // FIXED: Use centralized error handling for validation
     if (!email.contains('@')) {
-      if (mounted) mySnackBar(context, 'Enter a valid email');
-      if (mounted) setState(() => isLoading = false);
-      return;
-    }
-    if (password.length < 6) {
-      if (mounted)
-        mySnackBar(context, 'Password must be at least 6 characters');
-      if (mounted) setState(() => isLoading = false);
-      return;
-    }
-
-    try {
-      final response = await supabase.auth.signInWithPassword(
-        email: email,
-        password: password,
+      await ErrorHandler.handleError(
+        AppError(
+          message: 'Enter a valid email',
+          type: ErrorType.validation,
+        ),
+        null,
+        context: 'login validation',
+        buildContext: context,
       );
-
-      final user = response.user;
-      if (user == null) {
-        if (mounted) mySnackBar(context, 'Login failed');
-        return;
-      }
-
-      if (user.emailConfirmedAt == null) {
-        if (mounted)
-          mySnackBar(context, 'Please verify your email before logging in');
-        return;
-      }
-
-      if (!mounted) return;
-
-      // OPT: Replace 2 sequential selects with 1 batched query (smaller payload).
-      //      Only pull needed columns and cap with timeout to avoid hangs.
-      final res = await Supabase.instance.client
-          .from('social_accounts')
-          .select('platform, access_token, is_disconnected')
-          .eq('user_id', user.id)
-          .inFilter('platform', [
-            'linkedin',
-            'facebook',
-          ]) // current live providers here
-          .eq('is_disconnected', false)
-          .limit(2)
-          .timeout(const Duration(seconds: 10)); // OPT: network timeout
-
-      bool isConnected = false;
-      for (final row in (res as List<dynamic>)) {
-        final map = row as Map<String, dynamic>;
-        final token = map['access_token'];
-        if (token != null && token.toString().isNotEmpty) {
-          isConnected = true;
-          break; // OPT: short‑circuit once true
-        }
-      }
-
-      if (isConnected) {
-        if (mounted) context.go('/home');
-      } else {
-        if (mounted) context.go('/connect/linkedin');
-      }
-    } on TimeoutException {
-      if (mounted) mySnackBar(context, 'Network is slow. Please try again.');
-    } catch (e) {
-      if (!mounted) return;
-      // Preserve your existing error mapping
-      if (e is AuthException) {
-        if (e.message == 'Invalid login credentials') {
-          mySnackBar(context, 'Invalid email or password');
-        } else if (e.message == 'User not found') {
-          mySnackBar(context, 'User not found');
-        } else if (e.code == '400') {
-          mySnackBar(context, 'Confirm your email before logging in');
-        } else {
-          mySnackBar(context, e.message);
-        }
-      } else {
-        mySnackBar(context, e.toString());
-      }
-    } finally {
       if (mounted) setState(() => isLoading = false);
+      return;
     }
+
+    if (password.length < 6) {
+      await ErrorHandler.handleError(
+        AppError(
+          message: 'Password must be at least 6 characters',
+          type: ErrorType.validation,
+        ),
+        null,
+        context: 'login validation',
+        buildContext: context,
+      );
+      if (mounted) setState(() => isLoading = false);
+      return;
+    }
+
+    // FIXED: Use centralized error handling
+    await ErrorHandler.handleAsync(
+      () async {
+        final response = await supabase.auth.signInWithPassword(
+          email: email,
+          password: password,
+        );
+
+        final user = response.user;
+        if (user == null) {
+          throw AppError(
+            message: 'Login failed',
+            type: ErrorType.authentication,
+          );
+        }
+
+        if (user.emailConfirmedAt == null) {
+          throw AppError(
+            message: 'Please verify your email before logging in',
+            type: ErrorType.authentication,
+          );
+        }
+
+        if (!mounted) return null;
+
+        // FIXED: Optimized database query with proper error handling
+        final res = await supabase
+            .from('social_accounts')
+            .select('platform, access_token, is_disconnected')
+            .eq('user_id', user.id)
+            .inFilter('platform', ['linkedin', 'facebook'])
+            .eq('is_disconnected', false)
+            .limit(2)
+            .timeout(const Duration(seconds: 10));
+
+        bool isConnected = false;
+        for (final row in (res as List<dynamic>)) {
+          final map = row as Map<String, dynamic>;
+          final token = map['access_token'];
+          if (token != null && token.toString().isNotEmpty) {
+            isConnected = true;
+            break;
+          }
+        }
+
+        if (isConnected) {
+          if (mounted) context.go('/home');
+        } else {
+          if (mounted) context.go('/connect/linkedin');
+        }
+
+        return true;
+      },
+      context: 'login',
+      buildContext: context,
+    );
+
+    if (mounted) setState(() => isLoading = false);
   }
 
   @override

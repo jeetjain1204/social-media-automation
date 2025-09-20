@@ -16,6 +16,7 @@ import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
+import 'package:blob/services/database_service.dart';
 
 const double kDesktopBreak = 900;
 
@@ -311,16 +312,10 @@ class _ProfilePageState extends State<ProfilePage> {
             .timeout(const Duration(seconds: 12)),
       );
     } else {
-      await _withRetry(
-        () => supabase
-            .from('brand_profiles')
-            .update({'brand_logo_path': uploadKey}).eq('user_id', userId),
-      );
-      await _withRetry(
-        () => supabase
-            .schema('brand_kit')
-            .from('brand_kits')
-            .update({'brand_logo_path': uploadKey}).eq('user_id', userId),
+      await DatabaseService.updateProfile(
+        userId,
+        {'brand_logo_path': uploadKey},
+        brandKitUpdates: {'brand_logo_path': uploadKey},
       );
     }
 
@@ -353,11 +348,7 @@ class _ProfilePageState extends State<ProfilePage> {
       return;
     }
     try {
-      await _withRetry(
-        () => supabase
-            .from('brand_profiles')
-            .update({'brand_name': brandName}).eq('user_id', userId),
-      );
+      await DatabaseService.updateProfile(userId, {'brand_name': brandName});
       if (!mounted) return;
       context.read<ProfileNotifier>().notifyProfileUpdated();
       setState(() {
@@ -389,11 +380,10 @@ class _ProfilePageState extends State<ProfilePage> {
     final userId = supabase.auth.currentUser?.id;
     if (userId == null) return;
 
-    await _withRetry(
-      () => supabase
-          .schema('brand_kit')
-          .from('brand_kits')
-          .update({key: updatedList}).eq('user_id', userId),
+    await DatabaseService.updateProfile(
+      userId,
+      {},
+      brandKitUpdates: {key: updatedList},
     );
 
     final updatedKit = await _withRetry<Map<String, dynamic>?>(
@@ -940,15 +930,25 @@ class _ProfilePageState extends State<ProfilePage> {
                                                   (selectedColor) async {
                                                 final hex =
                                                     '#${selectedColor.value.toRadixString(16).substring(2)}';
-                                                await Supabase.instance.client
-                                                    .schema('brand_kit')
-                                                    .from('brand_kits')
-                                                    .update({
-                                                  'colors': {
-                                                    ...?brandKit!['colors'],
-                                                    'primary': hex
-                                                  }
-                                                }).eq('id', brandKit!['id']);
+                                                final userId = Supabase
+                                                    .instance
+                                                    .client
+                                                    .auth
+                                                    .currentUser
+                                                    ?.id;
+                                                if (userId != null) {
+                                                  await DatabaseService
+                                                      .updateProfile(
+                                                    userId,
+                                                    {},
+                                                    brandKitUpdates: {
+                                                      'colors': {
+                                                        ...?brandKit!['colors'],
+                                                        'primary': hex
+                                                      }
+                                                    },
+                                                  );
+                                                }
                                                 if (!mounted) return;
                                                 setState(() =>
                                                     brandKit!['colors']

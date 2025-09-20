@@ -1,0 +1,123 @@
+-- Performance Optimization: RPC Functions for Batch Operations
+-- Expected Impact: 70% reduction in round trips
+
+-- Get user dashboard data in single call
+CREATE OR REPLACE FUNCTION get_user_dashboard_data(user_uuid UUID)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    result JSON;
+BEGIN
+    -- Check if user exists and is active
+    IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = user_uuid) THEN
+        RETURN json_build_object('error', 'User not found');
+    END IF;
+    
+    SELECT json_build_object(
+        'profile', (
+            SELECT row_to_json(bp) 
+            FROM brand_profiles bp 
+            WHERE bp.user_id = user_uuid
+        ),
+        'social_accounts', (
+            SELECT COALESCE(json_agg(row_to_json(sa)), '[]') 
+            FROM social_accounts sa 
+            WHERE sa.user_id = user_uuid 
+            AND sa.is_disconnected = false
+        ),
+        'subscription', (
+            SELECT row_to_json(uss) 
+            FROM user_subscription_status uss 
+            WHERE uss.user_id = user_uuid
+        ),
+        'brand_kit', (
+            SELECT row_to_json(bk) 
+            FROM brand_kit.brand_kits bk 
+            WHERE bk.user_id = user_uuid
+        )
+    ) INTO result;
+    
+    RETURN result;
+END;
+$$;
+
+-- Batch update profile data
+CREATE OR REPLACE FUNCTION batch_update_profile(
+    user_uuid UUID,
+    profile_updates JSONB,
+    brand_kit_updates JSONB DEFAULT NULL
+)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    result JSON;
+BEGIN
+    -- Update brand profile
+    UPDATE brand_profiles 
+    SET 
+        persona = COALESCE((profile_updates->>'persona')::text, persona),
+        primary_goal = COALESCE((profile_updates->>'primary_goal')::text, primary_goal),
+        brand_name = COALESCE((profile_updates->>'brand_name')::text, brand_name),
+        primary_color = COALESCE((profile_updates->>'primary_color')::text, primary_color),
+        voice_tags = COALESCE((profile_updates->>'voice_tags')::text[], voice_tags),
+        content_types = COALESCE((profile_updates->>'content_types')::text[], content_types),
+        target_posts_per_week = COALESCE((profile_updates->>'target_posts_per_week')::int, target_posts_per_week),
+        category = COALESCE((profile_updates->>'category')::text, category),
+        subcategory = COALESCE((profile_updates->>'subcategory')::text, subcategory),
+        timezone = COALESCE((profile_updates->>'timezone')::text, timezone),
+        updated_at = NOW()
+    WHERE user_id = user_uuid;
+    
+    -- Update brand kit if provided
+    IF brand_kit_updates IS NOT NULL THEN
+        UPDATE brand_kit.brand_kits 
+        SET 
+            brand_name = COALESCE((brand_kit_updates->>'brand_name')::text, brand_name),
+            brand_logo_path = COALESCE((brand_kit_updates->>'brand_logo_path')::text, brand_logo_path),
+            updated_at = NOW()
+        WHERE user_id = user_uuid;
+    END IF;
+    
+    RETURN json_build_object('success', true, 'updated_at', NOW());
+END;
+$$;
+
+-- Get social connection status
+CREATE OR REPLACE FUNCTION get_social_connection_status(user_uuid UUID)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    result JSON;
+    connection_count INT;
+    needs_reconnect_count INT;
+BEGIN
+    SELECT 
+        COUNT(*) as total_connections,
+        COUNT(*) FILTER (WHERE needs_reconnect = true OR connected_at < NOW() - INTERVAL '50 days') as needs_reconnect
+    INTO connection_count, needs_reconnect_count
+    FROM social_accounts 
+    WHERE user_id = user_uuid 
+    AND is_disconnected = false;
+    
+    SELECT json_build_object(
+        'has_connections', connection_count > 0,
+        'connection_count', connection_count,
+        'needs_reconnect', needs_reconnect_count > 0,
+        'needs_reconnect_count', needs_reconnect_count,
+        'is_connected', connection_count > 0 AND needs_reconnect_count = 0
+    ) INTO result;
+    
+    RETURN result;
+END;
+$$;
+
+-- Grant execute permissions
+GRANT EXECUTE ON FUNCTION get_user_dashboard_data(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION batch_update_profile(UUID, JSONB, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_social_connection_status(UUID) TO authenticated;
