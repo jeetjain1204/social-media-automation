@@ -812,7 +812,9 @@ class _ExcludeChip extends StatelessWidget {
         onSelected: (v) => onToggle(context, v),
         backgroundColor: lightColor,
         selectedColor: darkColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
         showCheckmark: false,
       ),
     );

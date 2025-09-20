@@ -76,7 +76,9 @@ Future<String> decryptLinkedInToken(String base64Combined) async {
   //    you can prefix a keyId byte and switch on it without changing API.
   final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
   final derivedKeyBytes = await hkdf.deriveKey(
-    secretKey: SecretKey(utf8.encode(rawKey)),
+    secretKey: SecretKey(
+      utf8.encode(rawKey),
+    ),
     // OPT: Static salt+info to avoid requiring storage changes; do not treat as secret.
     nonce: utf8.encode('blob.linkedIn.hkdf.salt.v1'),
     info: utf8.encode('blob.linkedIn.hkdf.info.v1'),

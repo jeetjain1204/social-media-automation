@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
   media_url TEXT,
   platform TEXT NOT NULL,
   scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
-  status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'published', 'failed')),
+  status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'published', 'failed'),),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

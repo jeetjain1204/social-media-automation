@@ -308,7 +308,8 @@ class _ForegroundControlPanelState extends State<ForegroundControlPanel> {
         ..setAttribute("download", "insight_card.png")
         ..click();
       html.Url.revokeObjectUrl(url);
-    } catch (_) {
+    } catch (e) {
+      print('error: ${e.toString()}');
       if (mounted) mySnackBar(context, 'Some error occured');
     } finally {
       if (mounted) setState(() => isDownloading = false);
@@ -421,7 +422,8 @@ class _ForegroundControlPanelState extends State<ForegroundControlPanel> {
       }
 
       widget.onDone();
-    } catch (_) {
+    } catch (e) {
+      print('error: ${e.toString()}');
       if (mounted) mySnackBar(context, 'Some error occured');
     } finally {
       if (mounted) setState(() => isPosting = false);
@@ -694,667 +696,8 @@ class _ForegroundControlPanelState extends State<ForegroundControlPanel> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final config = context.watch<ForegroundNotifier>();
-    final aspectRatio = getAspectRatio(config.selectedAspectRatio);
-
-    if (isLoading) {
-      return const MyCircularProgressIndicator(size: 200);
-    }
-
-    final screen = MediaQuery.of(context).size;
-
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          minHeight: screen.height * 0.95,
-          maxHeight: screen.height * 0.95, // fixed viewport for stable layout
-          maxWidth: double.infinity,
-        ),
-        child: SizedBox.expand(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ===================== LEFT: Canvas & Actions =====================
-              SizedBox(
-                width: widget.width * 0.425,
-                child: SingleChildScrollView(
-                  primary: false,
-                  physics: const NeverScrollableScrollPhysics(),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AspectRatio(
-                        aspectRatio: aspectRatio,
-                        child: AutoSkeleton(
-                          enabled: bgImage == null,
-                          preserveSize: true,
-                          clipPadding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                          ), // vertical padding
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              color: lightColor.withOpacity(0.2),
-                              child: bgImage == null
-                                  ? Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Column(
-                                        children: [
-                                          Expanded(
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Container(
-                                                  height: 18,
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.white,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                      8,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Expanded(
-                                                child: Container(
-                                                  height: 18,
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.white,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                      8,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ) // invisible to user but used to map blocks
-                                  : RepaintBoundary(
-                                      key: paintKey,
-                                      child: AnimatedBuilder(
-                                        animation: config,
-                                        builder: (_, __) {
-                                          return CustomPaint(
-                                            painter: CardPainter(
-                                              cfg: config,
-                                              bg: bgImage!,
-                                              logo: config.logoImage,
-                                              headshot: config.headshotImage,
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      MyButton(
-                        width: widget.width * 0.5,
-                        text: 'Schedule Post',
-                        onTap: isPosting ? null : () => schedulePost(config),
-                        isLoading: isPosting,
-                      ),
-                      const SizedBox(height: 16),
-                      MyButton(
-                        width: widget.width * 0.5,
-                        text: 'Download',
-                        onTap: isDownloading ? null : exportCardImage,
-                        isLoading: isDownloading,
-                      ),
-                      const SizedBox(height: 12),
-                      MyTextButton(
-                        onPressed: () async {
-                          final success = await saveToTemplate(context, config);
-                          if (success) {
-                            mySnackBar(context, 'Template saved!');
-                          } else {
-                            mySnackBar(context, 'Failed to save template');
-                          }
-                        },
-                        child: const Text('Save Template'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              SizedBox(width: MediaQuery.of(context).size.width * 0.025),
-
-              // ===================== RIGHT: Controls =====================
-              Expanded(
-                child: Scrollbar(
-                  thumbVisibility: true,
-                  controller: scrollController,
-                  child: SingleChildScrollView(
-                    controller: scrollController,
-                    physics: const ClampingScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        MyButton(
-                          width: widget.width * 0.5,
-                          isLoading: false,
-                          text: 'Apply Template',
-                          onTap: () async {
-                            final result = await fetchTemplates();
-                            final userTemplates = result['userTemplates']!;
-                            final prebuiltTemplates =
-                                result['prebuiltTemplates']!;
-
-                            if (!context.mounted) return;
-                            await showDialog(
-                              context: context,
-                              builder: (context) => TemplatePickerDialog(
-                                userTemplates: userTemplates,
-                                prebuiltTemplates: prebuiltTemplates,
-                                onSelect: (template) async {
-                                  await loadFromTemplate(
-                                    context: context,
-                                    config: context.read<ForegroundNotifier>(),
-                                    template: template,
-                                    onBackgroundLoaded: (url) async {
-                                      final image = await loadImageFromUrl(url);
-                                      if (!mounted) return;
-                                      setState(() => bgImage = image);
-                                    },
-                                  );
-                                },
-                              ),
-                            );
-                          },
-                        ),
-                        Divider(
-                          thickness: 0.5,
-                          height: 24,
-                          indent: 20,
-                          endIndent: 20,
-                          color: darkColor.withOpacity(0.25),
-                        ),
-                        Text(
-                          'Text Content',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: darkColor,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        MyTextField(
-                          width: widget.width,
-                          controller: ideaController,
-                          hintText: 'Enter ${widget.imageTab}',
-                          onChanged: (p0) => config.update('Text', p0),
-                          type: TextInputType.multiline,
-                          textInputAction: TextInputAction.newline,
-                        ),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          description:
-                              'Controls the font size of the main text on your image',
-                          label: '${widget.imageTab} Size',
-                          child: MySlider(
-                            min: 12,
-                            max: 72,
-                            divisions: 36,
-                            valueNotifier: manualFontNotifier,
-                            onChanged: (v) => config.update('manualFont', v),
-                            tooltip: '${widget.imageTab} Size',
-                          ),
-                        ),
-                        if (widget.imageTab == 'Quote' ||
-                            widget.imageTab == 'Fact')
-                          EditWithLabelContainer(
-                            width: widget.width,
-                            description: widget.imageTab == 'Quote'
-                                ? 'Add the person who said the quote'
-                                : 'Mention the source of this fact',
-                            label: widget.imageTab == 'Quote'
-                                ? 'Author'
-                                : 'Source',
-                            switchBool: config.showSubLine,
-                            onChanged: (value) =>
-                                config.update('showSubLine', value),
-                            child: config.showSubLine
-                                ? Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      MyTextField(
-                                        width: widget.width,
-                                        controller: subLineController,
-                                        hintText:
-                                            'Enter ${widget.imageTab == 'Quote' ? 'Author' : 'Source'}',
-                                        onChanged: (p0) =>
-                                            config.update('subText', p0),
-                                        type: TextInputType.multiline,
-                                      ),
-                                      MySlider(
-                                        min: 0.4,
-                                        max: 0.8,
-                                        divisions: 2,
-                                        valueNotifier: subScaleNotifier,
-                                        onChanged: (v) =>
-                                            config.update('subScale', v),
-                                        tooltip:
-                                            '${widget.imageTab == 'Quote' ? 'Author' : 'Source'} Size',
-                                      ),
-                                    ],
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                        const SizedBox(height: 12),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          label: 'Text Box Size',
-                          description: 'Adjust the size of the text box',
-                          child: MySlider(
-                            min: 0.1,
-                            max: 0.92,
-                            divisions: 41,
-                            valueNotifier: textBoxFactorNotifier,
-                            onChanged: (v) => config.update('textBoxFactor', v),
-                            tooltip: 'Text Box Size',
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: MyDropDown(
-                                value: config.fontFamily,
-                                hint: 'Select Font Family',
-                                items: const ['Roboto', 'Inter', 'Poppins'],
-                                onChanged: (value) =>
-                                    config.update('fontFamily', value),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: DropdownButtonFormField<int>(
-                                hint: const Text('Select Font Weight'),
-                                value: config.fontWeight,
-                                items: fontWeightOptions.entries
-                                    .map(
-                                      (e) => DropdownMenuItem<int>(
-                                        value: e.key,
-                                        child: Text(e.value),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) =>
-                                    config.update('fontWeight', value),
-                                decoration: InputDecoration(
-                                  filled: true,
-                                  fillColor: const Color(0xFFBDE2FF),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 18,
-                                    vertical: 8,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                ),
-                                dropdownColor: const Color(0xFFBDE2FF),
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  color: darkColor,
-                                ),
-                                iconEnabledColor: darkColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        EditWithLabelContainer(
-                          label: 'Line Height',
-                          description: 'Set spacing between lines of text',
-                          width: widget.width,
-                          child: MySlider(
-                            min: 0.8,
-                            max: 1.6,
-                            divisions: 4,
-                            valueNotifier: lineHeightNotifier,
-                            onChanged: (v) => config.update('lineHeight', v),
-                            tooltip: 'Line Height',
-                          ),
-                        ),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          label: "Alignment",
-                          description:
-                              'Align the text to left, center, or right',
-                          child: Wrap(
-                            spacing: 8,
-                            children: ['L', 'C', 'R'].map((val) {
-                              return ChoiceChip(
-                                label: Text(val),
-                                selected: val == config.textAlign,
-                                onSelected: (_) =>
-                                    config.update('textAlign', val),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          label: 'Text Color',
-                          description: 'Choose the main color of the text',
-                          child: MyTextButton(
-                            onPressed: () async {
-                              await pickColor(
-                                context: context,
-                                initialColor: config.textColor,
-                                onColorSelected: (newColor) {
-                                  config.update('textColor', newColor);
-                                },
-                              );
-                            },
-                            child: const Text('Change Text Color'),
-                          ),
-                        ),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          label: 'Font Style',
-                          description: 'Toggle italic and uppercase styles',
-                          child: Row(
-                            children: [
-                              const Text("Italic"),
-                              MySwitch(
-                                value: config.italic,
-                                onChanged: (value) =>
-                                    config.update('italic', value),
-                              ),
-                              const SizedBox(width: 12),
-                              const Text("Uppercase"),
-                              MySwitch(
-                                value: config.uppercase,
-                                onChanged: (value) =>
-                                    config.update('uppercase', value),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Divider(
-                          thickness: 0.5,
-                          height: 24,
-                          indent: 48,
-                          endIndent: 48,
-                          color: darkColor.withOpacity(0.25),
-                        ),
-                        Text(
-                          'Adjust Logo and Headshot',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: darkColor,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          description:
-                              'Enable or disable the brand logo overlay',
-                          label: 'Show Logo',
-                          switchBool: config.showLogo,
-                          onChanged: (value) =>
-                              config.update('showLogo', value),
-                          child: config.showLogo
-                              ? Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _placementChips(
-                                      selected: config.logoPlacement,
-                                      onSelect: (val) {
-                                        if (!config.showLogo) return;
-                                        if (val == config.headshotPlacement) {
-                                          final alt = _firstAlt(
-                                            val,
-                                            config.headshotPlacement,
-                                            config.logoPlacement,
-                                          );
-                                          config.update(
-                                            'headshotPlacement',
-                                            alt,
-                                          );
-                                        }
-                                        config.update('logoPlacement', val);
-                                      },
-                                    ),
-                                    MySlider(
-                                      min: 0.06,
-                                      max: 0.20,
-                                      divisions: 7,
-                                      valueNotifier: logoScaleNotifier,
-                                      onChanged: (v) =>
-                                          config.update('logoScale', v),
-                                      tooltip: 'Logo Size',
-                                    ),
-                                  ],
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          label: 'Show Headshot',
-                          description:
-                              'Enable or disable headshot overlay on the image',
-                          switchBool: config.showHeadshot,
-                          onChanged: (value) =>
-                              config.update('showHeadshot', value),
-                          child: config.showHeadshot
-                              ? Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _placementChips(
-                                      selected: config.headshotPlacement,
-                                      onSelect: (val) {
-                                        if (!config.showHeadshot) return;
-                                        if (val == config.logoPlacement) {
-                                          final alt = _firstAlt(
-                                            val,
-                                            config.logoPlacement,
-                                            config.headshotPlacement,
-                                          );
-                                          config.update('logoPlacement', alt);
-                                        }
-                                        config.update('headshotPlacement', val);
-                                      },
-                                    ),
-                                    MySlider(
-                                      min: 0.06,
-                                      max: 0.20,
-                                      divisions: 7,
-                                      valueNotifier: headshotScaleNotifier,
-                                      onChanged: (v) =>
-                                          config.update('headshotScale', v),
-                                      tooltip: 'Headshot Size',
-                                    ),
-                                  ],
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          label: 'Logo Padding',
-                          description:
-                              'Control how close the logo is to the image edges',
-                          child: MySlider(
-                            min: 0,
-                            max: 0.15,
-                            divisions: 14,
-                            valueNotifier: overlayPaddingNotifier,
-                            onChanged: (value) =>
-                                config.update('overlayPadding', value),
-                            tooltip: 'Logo Padding',
-                          ),
-                        ),
-                        Divider(
-                          thickness: 0.5,
-                          height: 24,
-                          indent: 48,
-                          endIndent: 48,
-                          color: darkColor.withOpacity(0.25),
-                        ),
-                        Text(
-                          'Background Effects',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: darkColor,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          label: 'Drop Shadow',
-                          description:
-                              'Add a subtle drop shadow behind the text',
-                          switchBool: config.shadow,
-                          onChanged: (value) => config.update('shadow', value),
-                          child: config.shadow
-                              ? MySlider(
-                                  min: 1,
-                                  max: 8,
-                                  divisions: 7,
-                                  valueNotifier: shadowBlurNotifier,
-                                  onChanged: (v) =>
-                                      config.update('shadowBlur', v),
-                                  tooltip: 'Shadow Blur',
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          label: 'Background Blur',
-                          description:
-                              'Apply blur effect to the background image',
-                          child: MySlider(
-                            min: 0,
-                            max: 100,
-                            divisions: 100,
-                            valueNotifier: backgroundBlurNotifier,
-                            onChanged: (v) =>
-                                config.update('backgroundBlur', v),
-                            tooltip: 'Background Blur',
-                          ),
-                        ),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          description:
-                              'Increase or decrease how bright the background looks',
-                          label: config.autoBrightness
-                              ? 'Auto Brightness'
-                              : 'Adjust Brightness',
-                          switchBool: config.autoBrightness,
-                          onChanged: (value) =>
-                              config.update('autoBrightness', value),
-                          child: config.autoBrightness
-                              ? const SizedBox.shrink()
-                              : MySlider(
-                                  min: 0,
-                                  max: 200,
-                                  divisions: 200,
-                                  valueNotifier: backgroundBrightnessNotifier,
-                                  onChanged: (v) =>
-                                      config.update('backgroundBrightness', v),
-                                  tooltip: 'Background Brightness',
-                                ),
-                        ),
-                        Divider(
-                          thickness: 0.5,
-                          height: 24,
-                          indent: 48,
-                          endIndent: 48,
-                          color: darkColor.withOpacity(0.25),
-                        ),
-                        Text(
-                          'Resize',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: darkColor,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          label: 'Resize',
-                          description: 'Change the layout aspect ratio',
-                          child: Wrap(
-                            spacing: 8,
-                            children: ['1:1', '4:5', '9:16'].map((val) {
-                              return ChoiceChip(
-                                label: Text(val),
-                                selected: val == config.selectedAspectRatio,
-                                onSelected: (_) =>
-                                    config.update('selectedAspectRatio', val),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        Divider(
-                          thickness: 0.5,
-                          height: 24,
-                          indent: 48,
-                          endIndent: 48,
-                          color: darkColor.withOpacity(0.25),
-                        ),
-                        Text(
-                          'Caption',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: darkColor,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        EditWithLabelContainer(
-                          width: widget.width,
-                          description:
-                              'This will appear below your post. Add hashtags, CTAs, or a message',
-                          label: 'Caption',
-                          child: MyTextField(
-                            width: widget.width,
-                            controller: captionController,
-                            hintText: 'Enter Caption',
-                            type: TextInputType.multiline,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   // ===== helpers =====
-  Widget _placementChips({
+  Widget placementChips({
     required String selected,
     required ValueChanged<String> onSelect,
   }) {
@@ -1373,11 +716,712 @@ class _ForegroundControlPanelState extends State<ForegroundControlPanel> {
     );
   }
 
-  String _firstAlt(String conflict, String a, String b) {
+  String firstAlt(String conflict, String a, String b) {
     const opts = ['TL', 'TR', 'BL', 'BR', 'TC', 'BC'];
     return opts.firstWhere(
       (v) => v != conflict && v != a && v != b,
       orElse: () => 'BR',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final config = context.watch<ForegroundNotifier>();
+    final ar = getAspectRatio(config.selectedAspectRatio);
+
+    if (isLoading) return const MyCircularProgressIndicator(size: 200);
+
+    final size = MediaQuery.of(context).size;
+    final isWide = size.width >= 900;
+
+    // ===== DESKTOP / TABLET (>=900) =====
+    if (isWide) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: size.height * 0.95,
+            maxHeight: size.height * 0.95,
+            maxWidth: double.infinity,
+          ),
+          child: SizedBox.expand(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // LEFT: canvas + actions
+                SizedBox(
+                  width: widget.width * 0.425,
+                  child: SingleChildScrollView(
+                    primary: false,
+                    physics: const NeverScrollableScrollPhysics(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AspectRatio(
+                          aspectRatio: ar,
+                          child: AutoSkeleton(
+                            enabled: bgImage == null,
+                            preserveSize: true,
+                            clipPadding:
+                                const EdgeInsets.symmetric(vertical: 16),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                color: lightColor.withOpacity(0.2),
+                                child: bgImage == null
+                                    ? Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Column(
+                                          children: [
+                                            Expanded(
+                                              child: Container(
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Container(
+                                                      height: 18,
+                                                      decoration: BoxDecoration(
+                                                          color: Colors.white,
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(
+                                                                      8))),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Container(
+                                                      height: 18,
+                                                      decoration: BoxDecoration(
+                                                          color: Colors.white,
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(
+                                                                      8))),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : RepaintBoundary(
+                                        key: paintKey,
+                                        child: AnimatedBuilder(
+                                          animation: config,
+                                          builder: (_, __) => CustomPaint(
+                                            painter: CardPainter(
+                                              cfg: config,
+                                              bg: bgImage!,
+                                              logo: config.logoImage,
+                                              headshot: config.headshotImage,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        MyButton(
+                          width: widget.width * 0.5,
+                          text: 'Schedule Post',
+                          onTap: isPosting ? null : () => schedulePost(config),
+                          isLoading: isPosting,
+                        ),
+                        const SizedBox(height: 16),
+                        MyButton(
+                          width: widget.width * 0.5,
+                          text: 'Download',
+                          onTap: isDownloading ? null : exportCardImage,
+                          isLoading: isDownloading,
+                        ),
+                        const SizedBox(height: 12),
+                        MyTextButton(
+                          onPressed: () async {
+                            final ok = await saveToTemplate(context, config);
+                            mySnackBar(
+                                context,
+                                ok
+                                    ? 'Template saved!'
+                                    : 'Failed to save template');
+                          },
+                          child: const Text('Save Template'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                SizedBox(width: MediaQuery.of(context).size.width * 0.025),
+
+                // RIGHT: controls
+                Expanded(
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    controller: scrollController,
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      physics: const ClampingScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      child: controlsColumn(config, widget.width),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ===== MOBILE (<900) =====
+    final mobilePad = 16.0;
+    final panelW = size.width - mobilePad * 2;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Canvas first
+          AspectRatio(
+            aspectRatio: ar,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                color: lightColor.withOpacity(0.2),
+                child: bgImage == null
+                    ? AutoSkeleton(
+                        enabled: true,
+                        preserveSize: true,
+                        child: Container(color: Colors.white),
+                      )
+                    : RepaintBoundary(
+                        key: paintKey,
+                        child: AnimatedBuilder(
+                          animation: config,
+                          builder: (_, __) => CustomPaint(
+                            painter: CardPainter(
+                              cfg: config,
+                              bg: bgImage!,
+                              logo: config.logoImage,
+                              headshot: config.headshotImage,
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Controls stacked, compact widths
+          controlsColumn(config, panelW, mobile: true),
+          const SizedBox(height: 16),
+
+          // Primary actions full width
+          MyButton(
+            width: double.infinity,
+            text: 'Schedule Post',
+            onTap: isPosting ? null : () => schedulePost(config),
+            isLoading: isPosting,
+          ),
+          const SizedBox(height: 12),
+          MyButton(
+            width: double.infinity,
+            text: 'Download',
+            onTap: isDownloading ? null : exportCardImage,
+            isLoading: isDownloading,
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: MyTextButton(
+              onPressed: () async {
+                final ok = await saveToTemplate(context, config);
+                mySnackBar(context,
+                    ok ? 'Template saved!' : 'Failed to save template');
+              },
+              child: const Text('Save Template'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Shared controls. Uses panelWidth and adapts rows to columns on mobile.
+  Widget controlsColumn(ForegroundNotifier config, double panelWidth,
+      {bool mobile = false}) {
+    final twoUp = panelWidth >= 420 && !mobile;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        MyButton(
+          width: panelWidth,
+          isLoading: false,
+          text: 'Apply Template',
+          onTap: () async {
+            final result = await fetchTemplates();
+            final userTemplates = result['userTemplates']!;
+            final prebuiltTemplates = result['prebuiltTemplates']!;
+            if (!context.mounted) return;
+            await showDialog(
+              context: context,
+              builder: (context) => TemplatePickerDialog(
+                userTemplates: userTemplates,
+                prebuiltTemplates: prebuiltTemplates,
+                onSelect: (template) async {
+                  await loadFromTemplate(
+                    context: context,
+                    config: context.read<ForegroundNotifier>(),
+                    template: template,
+                    onBackgroundLoaded: (url) async {
+                      final img = await loadImageFromUrl(url);
+                      if (!mounted) return;
+                      setState(() => bgImage = img);
+                    },
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        Divider(
+          thickness: 0.5,
+          height: 24,
+          color: darkColor.withOpacity(0.25),
+        ),
+
+        Text(
+          'Text Content',
+          style: TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w600, color: darkColor),
+        ),
+        const SizedBox(height: 4),
+        MyTextField(
+          width: panelWidth,
+          controller: ideaController,
+          hintText: 'Enter ${widget.imageTab}',
+          onChanged: (p0) => config.update('Text', p0),
+          type: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
+        ),
+        EditWithLabelContainer(
+          width: panelWidth,
+          description: 'Controls the font size of the main text on your image',
+          label: '${widget.imageTab} Size',
+          child: MySlider(
+            min: 12,
+            max: 72,
+            divisions: 36,
+            valueNotifier: manualFontNotifier,
+            onChanged: (v) => config.update('manualFont', v),
+            tooltip: '${widget.imageTab} Size',
+          ),
+        ),
+        if (widget.imageTab == 'Quote' || widget.imageTab == 'Fact')
+          EditWithLabelContainer(
+            width: panelWidth,
+            description: widget.imageTab == 'Quote'
+                ? 'Add the person who said the quote'
+                : 'Mention the source of this fact',
+            label: widget.imageTab == 'Quote' ? 'Author' : 'Source',
+            switchBool: config.showSubLine,
+            onChanged: (v) => config.update('showSubLine', v),
+            child: config.showSubLine
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      MyTextField(
+                        width: panelWidth,
+                        controller: subLineController,
+                        hintText:
+                            'Enter ${widget.imageTab == 'Quote' ? 'Author' : 'Source'}',
+                        onChanged: (p0) => config.update('subText', p0),
+                        type: TextInputType.multiline,
+                      ),
+                      MySlider(
+                        min: 0.4,
+                        max: 0.8,
+                        divisions: 2,
+                        valueNotifier: subScaleNotifier,
+                        onChanged: (v) => config.update('subScale', v),
+                        tooltip: widget.imageTab == 'Quote'
+                            ? 'Author Size'
+                            : 'Source Size',
+                      ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+        const SizedBox(height: 12),
+        EditWithLabelContainer(
+          width: panelWidth,
+          label: 'Text Box Size',
+          description: 'Adjust the size of the text box',
+          child: MySlider(
+            min: 0.1,
+            max: 0.92,
+            divisions: 41,
+            valueNotifier: textBoxFactorNotifier,
+            onChanged: (v) => config.update('textBoxFactor', v),
+            tooltip: 'Text Box Size',
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // font family + weight -> row on wide, column on mobile
+        twoUp
+            ? Row(
+                children: [
+                  Expanded(
+                    child: MyDropDown(
+                      value: config.fontFamily,
+                      hint: 'Select Font Family',
+                      items: const ['Roboto', 'Inter', 'Poppins'],
+                      onChanged: (v) => config.update('fontFamily', v),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      hint: const Text('Select Font Weight'),
+                      value: config.fontWeight,
+                      items: fontWeightOptions.entries
+                          .map((e) => DropdownMenuItem<int>(
+                              value: e.key, child: Text(e.value)))
+                          .toList(),
+                      onChanged: (v) => config.update('fontWeight', v),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xFFBDE2FF),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 18, vertical: 8),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none),
+                      ),
+                      dropdownColor: const Color(0xFFBDE2FF),
+                      style: TextStyle(fontSize: 15, color: darkColor),
+                      iconEnabledColor: darkColor,
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                children: [
+                  MyDropDown(
+                    value: config.fontFamily,
+                    hint: 'Select Font Family',
+                    items: const ['Roboto', 'Inter', 'Poppins'],
+                    onChanged: (v) => config.update('fontFamily', v),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    hint: const Text('Select Font Weight'),
+                    value: config.fontWeight,
+                    items: fontWeightOptions.entries
+                        .map((e) => DropdownMenuItem<int>(
+                            value: e.key, child: Text(e.value)))
+                        .toList(),
+                    onChanged: (v) => config.update('fontWeight', v),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: const Color(0xFFBDE2FF),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 8),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none),
+                    ),
+                    dropdownColor: const Color(0xFFBDE2FF),
+                    style: TextStyle(fontSize: 15, color: darkColor),
+                    iconEnabledColor: darkColor,
+                  ),
+                ],
+              ),
+
+        const SizedBox(height: 12),
+        EditWithLabelContainer(
+          label: 'Line Height',
+          description: 'Set spacing between lines of text',
+          width: panelWidth,
+          child: MySlider(
+            min: 0.8,
+            max: 1.6,
+            divisions: 4,
+            valueNotifier: lineHeightNotifier,
+            onChanged: (v) => config.update('lineHeight', v),
+            tooltip: 'Line Height',
+          ),
+        ),
+        EditWithLabelContainer(
+          width: panelWidth,
+          label: "Alignment",
+          description: 'Align the text to left, center, or right',
+          child: Wrap(
+            spacing: 8,
+            children: ['L', 'C', 'R'].map((val) {
+              return ChoiceChip(
+                label: Text(val),
+                selected: val == config.textAlign,
+                onSelected: (_) => config.update('textAlign', val),
+              );
+            }).toList(),
+          ),
+        ),
+        EditWithLabelContainer(
+          width: panelWidth,
+          label: 'Text Color',
+          description: 'Choose the main color of the text',
+          child: MyTextButton(
+            onPressed: () async {
+              await pickColor(
+                context: context,
+                initialColor: config.textColor,
+                onColorSelected: (c) => config.update('textColor', c),
+              );
+            },
+            child: const Text('Change Text Color'),
+          ),
+        ),
+        EditWithLabelContainer(
+          width: panelWidth,
+          label: 'Font Style',
+          description: 'Toggle italic and uppercase styles',
+          child: Row(
+            children: [
+              const Text("Italic"),
+              MySwitch(
+                value: config.italic,
+                onChanged: (v) => config.update('italic', v),
+              ),
+              SizedBox(width: MediaQuery.sizeOf(context).width >= 900 ? 12 : 1),
+              const Text("Uppercase"),
+              MySwitch(
+                value: config.uppercase,
+                onChanged: (v) => config.update('uppercase', v),
+              ),
+            ],
+          ),
+        ),
+
+        Divider(
+          thickness: 0.5,
+          height: 24,
+          color: darkColor.withOpacity(0.25),
+        ),
+        Text(
+          'Adjust Logo and Headshot',
+          style: TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w600, color: darkColor),
+        ),
+        const SizedBox(height: 4),
+
+        EditWithLabelContainer(
+          width: panelWidth,
+          description: 'Enable or disable the brand logo overlay',
+          label: 'Show Logo',
+          switchBool: config.showLogo,
+          onChanged: (v) => config.update('showLogo', v),
+          child: config.showLogo
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    placementChips(
+                      selected: config.logoPlacement,
+                      onSelect: (val) {
+                        if (!config.showLogo) return;
+                        if (val == config.headshotPlacement) {
+                          final alt = firstAlt(val, config.headshotPlacement,
+                              config.logoPlacement);
+                          config.update('headshotPlacement', alt);
+                        }
+                        config.update('logoPlacement', val);
+                      },
+                    ),
+                    MySlider(
+                      min: 0.06,
+                      max: 0.20,
+                      divisions: 7,
+                      valueNotifier: logoScaleNotifier,
+                      onChanged: (v) => config.update('logoScale', v),
+                      tooltip: 'Logo Size',
+                    ),
+                  ],
+                )
+              : const SizedBox.shrink(),
+        ),
+        EditWithLabelContainer(
+          width: panelWidth,
+          label: 'Show Headshot',
+          description: 'Enable or disable headshot overlay on the image',
+          switchBool: config.showHeadshot,
+          onChanged: (v) => config.update('showHeadshot', v),
+          child: config.showHeadshot
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    placementChips(
+                      selected: config.headshotPlacement,
+                      onSelect: (val) {
+                        if (!config.showHeadshot) return;
+                        if (val == config.logoPlacement) {
+                          final alt = firstAlt(val, config.logoPlacement,
+                              config.headshotPlacement);
+                          config.update('logoPlacement', alt);
+                        }
+                        config.update('headshotPlacement', val);
+                      },
+                    ),
+                    MySlider(
+                      min: 0.06,
+                      max: 0.20,
+                      divisions: 7,
+                      valueNotifier: headshotScaleNotifier,
+                      onChanged: (v) => config.update('headshotScale', v),
+                      tooltip: 'Headshot Size',
+                    ),
+                  ],
+                )
+              : const SizedBox.shrink(),
+        ),
+        EditWithLabelContainer(
+          width: panelWidth,
+          label: 'Logo Padding',
+          description: 'Control how close the logo is to the image edges',
+          child: MySlider(
+            min: 0,
+            max: 0.15,
+            divisions: 14,
+            valueNotifier: overlayPaddingNotifier,
+            onChanged: (v) => config.update('overlayPadding', v),
+            tooltip: 'Logo Padding',
+          ),
+        ),
+
+        Divider(
+          thickness: 0.5,
+          height: 24,
+          color: darkColor.withOpacity(0.25),
+        ),
+        Text(
+          'Background Effects',
+          style: TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w600, color: darkColor),
+        ),
+        const SizedBox(height: 4),
+        EditWithLabelContainer(
+          width: panelWidth,
+          label: 'Drop Shadow',
+          description: 'Add a subtle drop shadow behind the text',
+          switchBool: config.shadow,
+          onChanged: (v) => config.update('shadow', v),
+          child: config.shadow
+              ? MySlider(
+                  min: 1,
+                  max: 8,
+                  divisions: 7,
+                  valueNotifier: shadowBlurNotifier,
+                  onChanged: (v) => config.update('shadowBlur', v),
+                  tooltip: 'Shadow Blur',
+                )
+              : const SizedBox.shrink(),
+        ),
+        EditWithLabelContainer(
+          width: panelWidth,
+          label: 'Background Blur',
+          description: 'Apply blur effect to the background image',
+          child: MySlider(
+            min: 0,
+            max: 100,
+            divisions: 100,
+            valueNotifier: backgroundBlurNotifier,
+            onChanged: (v) => config.update('backgroundBlur', v),
+            tooltip: 'Background Blur',
+          ),
+        ),
+        EditWithLabelContainer(
+          width: panelWidth,
+          description: 'Increase or decrease how bright the background looks',
+          label:
+              config.autoBrightness ? 'Auto Brightness' : 'Adjust Brightness',
+          switchBool: config.autoBrightness,
+          onChanged: (v) => config.update('autoBrightness', v),
+          child: config.autoBrightness
+              ? const SizedBox.shrink()
+              : MySlider(
+                  min: 0,
+                  max: 200,
+                  divisions: 200,
+                  valueNotifier: backgroundBrightnessNotifier,
+                  onChanged: (v) => config.update('backgroundBrightness', v),
+                  tooltip: 'Background Brightness',
+                ),
+        ),
+
+        Divider(
+          thickness: 0.5,
+          height: 24,
+          color: darkColor.withOpacity(0.25),
+        ),
+        Text(
+          'Resize',
+          style: TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w600, color: darkColor),
+        ),
+        const SizedBox(height: 4),
+        EditWithLabelContainer(
+          width: panelWidth,
+          label: 'Resize',
+          description: 'Change the layout aspect ratio',
+          child: Wrap(
+            spacing: 8,
+            children: ['1:1', '4:5', '9:16'].map((val) {
+              return ChoiceChip(
+                label: Text(val),
+                selected: val == config.selectedAspectRatio,
+                onSelected: (_) => config.update('selectedAspectRatio', val),
+              );
+            }).toList(),
+          ),
+        ),
+
+        Divider(
+          thickness: 0.5,
+          height: 24,
+          color: darkColor.withOpacity(0.25),
+        ),
+        Text(
+          'Caption',
+          style: TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w600, color: darkColor),
+        ),
+        const SizedBox(height: 4),
+        EditWithLabelContainer(
+          width: panelWidth,
+          description:
+              'This will appear below your post. Add hashtags, CTAs, or a message',
+          label: 'Caption',
+          child: MyTextField(
+            width: panelWidth,
+            controller: captionController,
+            hintText: 'Enter Caption',
+            type: TextInputType.multiline,
+          ),
+        ),
+      ],
     );
   }
 }

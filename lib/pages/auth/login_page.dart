@@ -179,7 +179,9 @@ class _LoginPageState extends State<LoginPage> {
                   style: TextStyle(color: darkColor),
                   decoration: InputDecoration(
                     labelText: 'Email',
-                    labelStyle: TextStyle(color: darkColor.withOpacity(0.7)),
+                    labelStyle: TextStyle(
+                      color: darkColor.withOpacity(0.7),
+                    ),
                     filled: true,
                     fillColor: const Color(0xFFF1F7FF),
                     contentPadding: const EdgeInsets.symmetric(
@@ -205,7 +207,9 @@ class _LoginPageState extends State<LoginPage> {
                   onSubmitted: (_) => login(), // OPT: no extra await needed
                   decoration: InputDecoration(
                     labelText: 'Password',
-                    labelStyle: TextStyle(color: darkColor.withOpacity(0.7)),
+                    labelStyle: TextStyle(
+                      color: darkColor.withOpacity(0.7),
+                    ),
                     filled: true,
                     fillColor: const Color(0xFFF1F7FF),
                     contentPadding: const EdgeInsets.symmetric(

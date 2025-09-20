@@ -19,7 +19,7 @@ const to32 = (b: Uint8Array) => b.length === 32 ? b : new Uint8Array(b.subarray(
 async function encrypt(plain: string, secret: string) {
   const iv  = crypto.getRandomValues(new Uint8Array(12));
   const key = await crypto.subtle.importKey(
-    "raw", to32(new TextEncoder().encode(secret)), { name: "AES-GCM" }, false, ["encrypt"],
+    "raw", to32(new TextEncoder().encode(secret),), { name: "AES-GCM" }, false, ["encrypt"],
   );
   const buf  = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plain));
   const full = new Uint8Array(iv.length + buf.byteLength);

@@ -248,7 +248,7 @@ async function processJob(job: any) {
         const res = await fetch(`${LI_API_V2}/ugcPosts`, withTimeout({
           method: "POST",
           headers: { ...LI_STD, Authorization: `Bearer ${access_token}` },
-          body: JSON.stringify(liTextUGC(author_urn, caption ?? "")),
+          body: JSON.stringify(liTextUGC(author_urn, caption ?? ""),),
         }, T.EXT));
         if (!res.ok) throw new Error(await res.text());
         const postUrn = decodeURIComponent(res.headers.get("x-restli-id") ?? "");

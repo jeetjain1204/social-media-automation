@@ -89,7 +89,9 @@ class ProfileBox extends StatelessWidget {
           children: [
             Text(
               label!,
-              style: _labelStyle.copyWith(color: darkColor.withOpacity(0.5)),
+              style: _labelStyle.copyWith(
+                color: darkColor.withOpacity(0.5),
+              ),
             ),
             const SizedBox(height: 12),
             if (value != null)
@@ -119,7 +121,10 @@ class ProfileBox extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (var item in displayItems) _buildChip(item.toString()),
+        for (var item in displayItems)
+          _buildChip(
+            item.toString(),
+          ),
         if (hasExtra) _buildExtraBadge(extraCount),
       ],
     );

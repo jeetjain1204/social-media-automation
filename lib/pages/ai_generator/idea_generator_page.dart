@@ -13,14 +13,12 @@ class IdeaGeneratorPage extends StatefulWidget {
   const IdeaGeneratorPage({super.key});
 
   @override
-  State<IdeaGeneratorPage> createState() => _IdeaGeneratorPageState();
+  State<IdeaGeneratorPage> createState() => IdeaGeneratorPageState();
 }
 
-class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
-  // Keep a single client ref
+class IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
   final SupabaseClient supabase = Supabase.instance.client;
 
-  // OPT: Use growable lists but pre-size to reduce interim reallocations on merges
   List<Map<String, dynamic>> generatedIdeas = <Map<String, dynamic>>[];
   List<Map<String, dynamic>> unreviewedIdeas = <Map<String, dynamic>>[];
 
@@ -55,13 +53,11 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
   String? selectedTone;
   bool includeSource = false;
 
-  // OPT: Make constants const to trim rebuild cost & JS payload
-  // static const List<String> tones = ['Friendly', 'Professional', 'Bold', 'Motivational', 'Fun'];
   static const List<String> formats = ['Question', 'Hot-take', 'Story prompt'];
   static const List<String> hooks = ['Statistic', 'Challenge', 'Myth bust'];
   static const List<String> emotions = ['Inspire', 'Courage', 'Humour'];
   static const List<String> archetypes = ['Visionary', 'Operator', 'Coach'];
-  static const List<String> metrics = ['%', '\$', 'X-of-Y'];
+  static const List<String> metrics = ['%', r'$', 'X-of-Y'];
   static const List<String> horizons = [
     'Latest Month',
     'Latest Year',
@@ -82,16 +78,13 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
   ];
   static const List<String> difficulties = ['Beginner', 'Pro'];
 
-  // OPT: Reuse prefs instance (avoid reopening on each call)
   late final Future<SharedPreferences> prefsFuture;
-
-  // OPT: Simple debounce/guard to avoid accidental double generations
-  int _lastGenMs = 0;
+  int lastGenMs = 0;
 
   @override
   void initState() {
     super.initState();
-    prefsFuture = SharedPreferences.getInstance(); // OPT: cache instance
+    prefsFuture = SharedPreferences.getInstance();
     getProfileData();
     loadUnreviewedIdeas();
   }
@@ -101,7 +94,6 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
     if (user == null) return;
 
     try {
-      // OPT: Select only the columns we actually use (less JSON → faster decode)
       final brandProfile = await supabase
           .from('brand_profiles')
           .select('persona, category, subcategory, primary_goal, voice_tags')
@@ -115,16 +107,13 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
         profileGoal = brandProfile['primary_goal'] as String?;
         profileVoiceTags = (brandProfile['voice_tags'] ?? []) as List;
       }
-    } catch (_) {
-      // Fail-closed: keep defaults, avoid user-visible noise
-    }
+    } catch (_) {}
   }
 
   Future<void> generateIdeas() async {
-    // OPT: Debounce fast repeats (double click)
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastGenMs < 800) return;
-    _lastGenMs = now;
+    if (now - lastGenMs < 800) return;
+    lastGenMs = now;
 
     setState(() => isLoading = true);
 
@@ -135,7 +124,6 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
       final isImage = selectedMainTab == 'Image';
       final category = isImage ? selectedImageSubTab : 'Text';
 
-      // OPT: Build payload compactly and only attach non-null fields
       final Map<String, dynamic> payload = <String, dynamic>{
         'count': selectedCount,
         'category': category,
@@ -152,23 +140,17 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
               ? selectedVoiceTags
               : profileVoiceTags,
         if ((topicSeed ?? '').isNotEmpty) 'topic_seed': topicSeed,
-
-        // TEXT
         if (category == 'Text' && (formatPreference ?? '').isNotEmpty)
           'format': formatPreference,
         if (category == 'Text' && (hookStyle ?? '').isNotEmpty)
           'hook_style': hookStyle,
         if (category == 'Tip' && (desiredKPI ?? '').isNotEmpty)
           'desired_kpi': desiredKPI,
-
-        // QUOTE
         if (category == 'Quote' && (emotionTarget ?? '').isNotEmpty)
           'emotion_target': emotionTarget,
         if (category == 'Quote' && (authorArchetype ?? '').isNotEmpty)
           'author_archetype': authorArchetype,
         if (category == 'Quote' && includeSource) 'include_source': true,
-
-        // FACT
         if (category == 'Fact' && (metricType ?? '').isNotEmpty)
           'metric_type': metricType,
         if (category == 'Fact' && (timeHorizon ?? '').isNotEmpty)
@@ -178,8 +160,6 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
         if (category == 'Fact' && (region ?? '').isNotEmpty) 'region': region,
         if ((category == 'Fact' || category == 'Tip') && selectedTone != null)
           'tone': selectedTone!.toLowerCase(),
-
-        // TIP
         if (category == 'Tip' && (difficultyLevel ?? '').isNotEmpty)
           'difficulty_level': difficultyLevel,
         if (category == 'Tip') 'implementation_time': implementationTime,
@@ -189,8 +169,7 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
         'generate-ideas',
         body: payload,
         headers: {
-          if (accessToken != null)
-            'Authorization': 'Bearer $accessToken', // OPT: avoid null header
+          if (accessToken != null) 'Authorization': 'Bearer $accessToken'
         },
       );
 
@@ -200,11 +179,9 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
         return;
       }
 
-      // OPT: Single decode and single setState at the end
       final decoded = jsonDecode(raw as String);
       final List<dynamic> rawIdeas = decoded['ideas'] ?? [];
 
-      // OPT: Filter/clean in one pass; avoid extra temporary lists
       final List<Map<String, dynamic>> newIdeas = <Map<String, dynamic>>[];
       for (final e in rawIdeas) {
         if (e is Map<String, dynamic> && e['response'] != '{') {
@@ -221,7 +198,6 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
         return;
       }
 
-      // OPT: Avoid duplicates by response when merging
       final Set<String> newResp =
           newIdeas.map((e) => e['response']?.toString() ?? '').toSet();
       final List<Map<String, dynamic>> merged = <Map<String, dynamic>>[
@@ -231,7 +207,6 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
         ),
       ];
 
-      // OPT: Persist unreviewed with a single write
       unreviewedIdeas.addAll(newIdeas);
       await saveUnreviewedIdeas();
 
@@ -255,7 +230,6 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
     }
 
     try {
-      // OPT: Single insert; only necessary fields
       await supabase.from('content_ideas').insert({
         'user_id': user.id,
         'idea': idea['response'],
@@ -275,7 +249,7 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
 
   // ---------- UI helpers ----------
 
-  Widget buildAdvancedPanel(double width) {
+  Widget buildAdvancedPanel(double width, bool isWide) {
     final bool isText = selectedMainTab == 'Text';
     final bool isQuote =
         selectedMainTab == 'Image' && selectedImageSubTab == 'Quote';
@@ -284,13 +258,17 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
     final bool isTip =
         selectedMainTab == 'Image' && selectedImageSubTab == 'Tip';
 
+    final double fieldWidth = isWide ? width * 0.4 : width;
+
     return Container(
-      margin: const EdgeInsets.only(top: 24), // --space-6
+      margin: const EdgeInsets.only(top: 24),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: lightColor.withOpacity(0.05),
-        border: Border.all(color: darkColor.withOpacity(0.15)),
-        borderRadius: BorderRadius.circular(16), // --radius-card
+        border: Border.all(
+          color: darkColor.withOpacity(0.15),
+        ),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,15 +282,8 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
             ),
           ),
           const SizedBox(height: 24),
-
-          // D: Topic/Keyword
-          buildTextField(
-            "Topic / Keyword Seed",
-            topicSeed,
-            (val) => setState(() => topicSeed = val),
-            width,
-          ),
-
+          buildTextField("Topic / Keyword Seed", topicSeed,
+              (val) => setState(() => topicSeed = val), fieldWidth),
           if (isText) ...[
             buildRadioRow(
               "Format Preference",
@@ -327,22 +298,11 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
               (val) => setState(() => hookStyle = val),
             ),
           ],
-
           if (isQuote) ...[
-            buildDropdown(
-              "Emotion Target",
-              emotionTarget,
-              emotions,
-              (val) => setState(() => emotionTarget = val),
-              width,
-            ),
-            buildDropdown(
-              "Author Archetype",
-              authorArchetype,
-              archetypes,
-              (val) => setState(() => authorArchetype = val),
-              width,
-            ),
+            buildDropdown("Emotion Target", emotionTarget, emotions,
+                (val) => setState(() => emotionTarget = val), fieldWidth),
+            buildDropdown("Author Archetype", authorArchetype, archetypes,
+                (val) => setState(() => authorArchetype = val), fieldWidth),
             const SizedBox(height: 4),
             Row(
               children: [
@@ -352,10 +312,8 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  side: BorderSide(
-                    color: darkColor.withOpacity(0.3),
-                    width: 1.5,
-                  ),
+                  side:
+                      BorderSide(color: darkColor.withOpacity(0.3), width: 1.5),
                   fillColor: MaterialStateProperty.resolveWith((states) {
                     if (states.contains(MaterialState.selected))
                       return lightColor;
@@ -363,63 +321,38 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
                   }),
                 ),
                 const SizedBox(width: 8),
-                const Text("Include Source", style: TextStyle(fontSize: 14)),
+                const Text(
+                  "Include Source",
+                  style: TextStyle(fontSize: 14),
+                ),
               ],
             ),
           ],
-
           if (isFact) ...[
+            buildDropdown("Metric Type", metricType, metrics,
+                (val) => setState(() => metricType = val), fieldWidth),
+            buildDropdown("Time Horizon", timeHorizon, horizons,
+                (val) => setState(() => timeHorizon = val), fieldWidth),
             buildDropdown(
-              "Metric Type",
-              metricType,
-              metrics,
-              (val) => setState(() => metricType = val),
-              width,
-            ),
-            buildDropdown(
-              "Time Horizon",
-              timeHorizon,
-              horizons,
-              (val) => setState(() => timeHorizon = val),
-              width,
-            ),
-            buildDropdown(
-              "Source Seriousness",
-              sourceSeriousness,
-              seriousnessLevels,
-              (val) => setState(() => sourceSeriousness = val),
-              width,
-            ),
-            buildDropdown(
-              "Region / Market",
-              region,
-              regions,
-              (val) => setState(() => region = val),
-              width,
-            ),
+                "Source Seriousness",
+                sourceSeriousness,
+                seriousnessLevels,
+                (val) => setState(() => sourceSeriousness = val),
+                fieldWidth),
+            buildDropdown("Region / Market", region, regions,
+                (val) => setState(() => region = val), fieldWidth),
           ],
-
           if (isTip) ...[
-            buildDropdown(
-              "Difficulty Level",
-              difficultyLevel,
-              difficulties,
-              (val) => setState(() => difficultyLevel = val),
-              width,
-            ),
+            buildDropdown("Difficulty Level", difficultyLevel, difficulties,
+                (val) => setState(() => difficultyLevel = val), fieldWidth),
             buildSlider(
               "Implementation Time (0 = quick, 1 = long)",
               implementationTime,
               (val) => setState(() => implementationTime = val),
             ),
-            buildTextField(
-              "Desired Outcome KPI",
-              desiredKPI,
-              (val) => setState(() => desiredKPI = val),
-              width,
-            ),
+            buildTextField("Desired Outcome KPI", desiredKPI,
+                (val) => setState(() => desiredKPI = val), fieldWidth),
           ],
-
           const SizedBox(height: 12),
         ],
       ),
@@ -434,21 +367,20 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
     double width,
   ) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 24), // --space-6
+      padding: const EdgeInsets.only(bottom: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
             style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-              color: Color(0xFF111827),
-            ),
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: Color(0xFF111827)),
           ),
           const SizedBox(height: 8),
           MyDropDown(
-            width: width * 0.4,
+            width: width,
             height: 44,
             value: selected,
             hint: 'Select $label',
@@ -466,11 +398,10 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
     void Function(String) onChanged,
     double width,
   ) {
-    final Color fillColor = Colors.white;
-    final Color baseBorderColor = lightColor.withOpacity(0.4);
-    const double radius = 16; // --radius-card
+    final Color fill = Colors.white;
+    final Color baseBorder = lightColor.withOpacity(0.4);
+    const double radius = 16;
     const double height = 50;
-    const double horizontalPadding = 16;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -478,29 +409,22 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
       height: height,
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
-        color: fillColor,
+        color: fill,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: baseBorderColor, width: 1.5),
+        border: Border.all(color: baseBorder, width: 1.5),
       ),
       child: TextFormField(
         initialValue: value,
         onChanged: onChanged,
         style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-          color: Colors.black,
-        ),
+            fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black),
         decoration: InputDecoration(
           hintText: label,
           hintStyle: TextStyle(
-            color: darkColor.withOpacity(0.4),
-            fontWeight: FontWeight.w400,
-          ),
+              color: darkColor.withOpacity(0.4), fontWeight: FontWeight.w400),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: horizontalPadding,
-            vertical: 0, // OPT: rely on height; vertical padding not needed
-          ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
         ),
       ),
     );
@@ -520,10 +444,9 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
           Text(
             label,
             style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-              color: Color(0xFF111827),
-            ),
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: Color(0xFF111827)),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -539,9 +462,8 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
                   label: Text(
                     opt,
                     style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: isSelected ? lightColor : darkColor,
-                    ),
+                        fontWeight: FontWeight.w500,
+                        color: isSelected ? lightColor : darkColor),
                   ),
                   selected: isSelected,
                   onSelected: (_) => onChanged(opt),
@@ -568,17 +490,16 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
     void Function(double) onChanged,
   ) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 24), // --space-6
+      padding: const EdgeInsets.only(bottom: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             "$label: ${(value * 100).round()}%",
             style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-              color: Color(0xFF111827),
-            ),
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: Color(0xFF111827)),
           ),
           const SizedBox(height: 8),
           Slider(
@@ -598,17 +519,15 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
   // ---------- Local persistence ----------
 
   Future<void> saveUnreviewedIdeas() async {
-    final prefs = await prefsFuture; // OPT: reuse cached instance
-    // OPT: Write only when mounted to avoid race on dispose
+    final prefs = await prefsFuture;
     await prefs.setString('unreviewed_ideas', jsonEncode(unreviewedIdeas));
   }
 
   Future<void> loadUnreviewedIdeas() async {
-    final prefs = await prefsFuture; // OPT: reuse cached instance
+    final prefs = await prefsFuture;
     final encoded = prefs.getString('unreviewed_ideas');
     if (encoded == null || encoded.isEmpty) return;
 
-    // OPT: Single setState; map safely
     final List<dynamic> decoded = jsonDecode(encoded);
     final List<Map<String, dynamic>> items =
         decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -625,352 +544,350 @@ class _IdeaGeneratorPageState extends State<IdeaGeneratorPage> {
   }
 
   void removeUnreviewedFromGenerated() {
-    // OPT: No setState storm; do a single mutation
     setState(() {
       final Set<String> unrev =
           unreviewedIdeas.map((u) => u['response']?.toString() ?? '').toSet();
-      generatedIdeas.removeWhere(
-        (g) => unrev.contains(g['response']?.toString() ?? ''),
-      );
+      generatedIdeas
+          .removeWhere((g) => unrev.contains(g['response']?.toString() ?? ''));
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final double width = MediaQuery.sizeOf(context).width;
+    final bool isWide = width >= 900;
+
+    // Wide layout: keep current behavior
+    if (isWide) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        body: SingleChildScrollView(
+          padding: EdgeInsets.all(width * 0.0125),
+          child: buildContent(width: width, isWide: true),
+        ),
+      );
+    }
+
+    // Mobile layout: compact paddings, full-width controls
     return Scaffold(
       backgroundColor: backgroundColor,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final double width = constraints.maxWidth;
-
-          return SingleChildScrollView(
-            padding: EdgeInsets.all(width * 0.0125),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Main Tab Toggle
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    AnimatedScale(
-                      scale: selectedMainTab == 'Image' ? 1.125 : 1.0,
-                      duration: const Duration(milliseconds: 120),
-                      curve: Curves.easeOut,
-                      child: ChoiceChip(
-                        label: Text(
-                          'Image',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w500,
-                            color: selectedMainTab == 'Image'
-                                ? lightColor
-                                : darkColor,
-                          ),
-                        ),
-                        selected: selectedMainTab == 'Image',
-                        onSelected: (_) =>
-                            setState(() => selectedMainTab = 'Image'),
-                        backgroundColor: lightColor,
-                        selectedColor: darkColor,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 0,
-                        pressElevation: 0,
-                        showCheckmark: false,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    AnimatedScale(
-                      scale: selectedMainTab == 'Text' ? 1.125 : 1.0,
-                      duration: const Duration(milliseconds: 120),
-                      curve: Curves.easeOut,
-                      child: ChoiceChip(
-                        label: Text(
-                          'Text',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w500,
-                            color: selectedMainTab == 'Text'
-                                ? lightColor
-                                : darkColor,
-                          ),
-                        ),
-                        selected: selectedMainTab == 'Text',
-                        onSelected: (_) => setState(() {
-                          selectedMainTab = 'Text';
-                          selectedImageSubTab = 'Quote';
-                          includeSource = false;
-                          selectedTone = null;
-                        }),
-                        backgroundColor: lightColor,
-                        selectedColor: darkColor,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 0,
-                        pressElevation: 0,
-                        showCheckmark: false,
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                // Sub-tabs under Image
-                if (selectedMainTab == 'Image')
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: ['Quote', 'Fact', 'Tip'].map((type) {
-                      final bool isSelected = selectedImageSubTab == type;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 12),
-                        child: AnimatedScale(
-                          scale: isSelected ? 1.125 : 1.0,
-                          duration: const Duration(milliseconds: 120),
-                          curve: Curves.easeOut,
-                          child: ChoiceChip(
-                            label: Text(
-                              type,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w500,
-                                color: isSelected ? lightColor : darkColor,
-                              ),
-                            ),
-                            selected: isSelected,
-                            onSelected: (_) => setState(() {
-                              selectedImageSubTab = type;
-                              includeSource = false;
-                              selectedTone = null;
-                            }),
-                            backgroundColor: lightColor,
-                            selectedColor: darkColor,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            elevation: 0,
-                            pressElevation: 0,
-                            showCheckmark: false,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-
-                const SizedBox(height: 28),
-
-                // Toggle Advanced Panel
-                MyTextButton(
-                  onPressed: () => setState(() => showAdvanced = !showAdvanced),
-                  child: Text(
-                    showAdvanced
-                        ? 'Hide Advanced Customization'
-                        : 'Show Advanced Customization (Style, Tone, Source)',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-
-                if (showAdvanced) buildAdvancedPanel(width),
-
-                const SizedBox(height: 28),
-
-                // Idea Count Picker
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'Ideas to generate in one click:',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(width: 12),
-                    MyDropDown(
-                      width: width * 0.1,
-                      value: selectedCount.toString(),
-                      items: const ['1', '5', '10', '30', '50', '100'],
-                      onChanged: (value) =>
-                          setState(() => selectedCount = int.parse(value!)),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 28),
-
-                // Generate Button
-                MyButton(
-                  width: width * 0.25,
-                  text:
-                      'Generate $selectedCount${generatedIdeas.isNotEmpty ? ' More' : ''} ${selectedCount > 1 ? 'Ideas' : 'Idea'}',
-                  isLoading: isLoading,
-                  onTap: isLoading ? null : () async => generateIdeas(),
-                ),
-
-                const SizedBox(height: 12),
-
-                // Unreviewed Toggle
-                if (unreviewedIdeas.isNotEmpty)
-                  Tooltip(
-                    message:
-                        'Ideas generated earlier but not accepted or rejected',
-                    child: MyTextButton(
-                      onPressed: () {
-                        setState(() {
-                          if (showUnreviewed) {
-                            showUnreviewed = false;
-                            removeUnreviewedFromGenerated();
-                          } else {
-                            generatedIdeas = [...unreviewedIdeas];
-                            showUnreviewed = true;
-                          }
-                        });
-                      },
-                      icon: const Icon(Icons.history, size: 18),
-                      child: Text(
-                        showUnreviewed
-                            ? "Hide Unreviewed Ideas"
-                            : "Show Unreviewed Ideas",
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                  ),
-
-                const SizedBox(height: 32),
-
-                // Generated Ideas
-                if (generatedIdeas.isNotEmpty)
-                  SizedBox(
-                    width: width * 0.9,
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      physics: const ClampingScrollPhysics(),
-                      itemCount: generatedIdeas.length,
-                      itemBuilder: (context, index) {
-                        final idea = generatedIdeas[index];
-                        final String ideaText =
-                            idea['response']?.toString() ?? '';
-                        final String ideaSource =
-                            idea['source']?.toString() ?? '';
-                        final String ideaBackground =
-                            idea['background']?.toString() ?? '';
-
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOut,
-                          margin: const EdgeInsets.symmetric(vertical: 8),
-                          decoration: BoxDecoration(
-                            color: lightColor.withOpacity(0.2),
-                            border: Border.all(
-                              color: darkColor.withOpacity(0.2),
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: ListTile(
-                            title: Text(
-                              ideaText,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (idea['category'] != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      idea['category'].toString(),
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: darkColor,
-                                      ),
-                                    ),
-                                  ),
-                                if (ideaSource.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      'Source: $ideaSource',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ),
-                                if (ideaBackground.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      'Background: $ideaBackground',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.blueGrey,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Accept',
-                                  icon: const Icon(
-                                    Icons.check,
-                                    color: Colors.green,
-                                  ),
-                                  onPressed: () async {
-                                    setState(() {
-                                      generatedIdeas.remove(idea);
-                                    });
-                                    await acceptIdea(idea);
-                                  },
-                                ),
-                                IconButton(
-                                  tooltip: 'Reject',
-                                  icon: const Icon(
-                                    Icons.close,
-                                    color: Colors.red,
-                                  ),
-                                  onPressed: () async {
-                                    setState(() {
-                                      generatedIdeas.remove(idea);
-                                    });
-                                    await removeIdeaFromPrefs(idea);
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-
-                if (isLoading)
-                  SizedBox(
-                    width: width * 0.9,
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      physics: const ClampingScrollPhysics(),
-                      // OPT: Cap shimmer rows to avoid huge DOM during big counts
-                      itemCount: selectedCount.clamp(1, 20),
-                      itemBuilder: (_, __) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: ShimmerRow(),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: buildContent(width: width - 32, isWide: false),
       ),
+    );
+  }
+
+  // Shared content builder with width + isWide toggles
+  Widget buildContent({required double width, required bool isWide}) {
+    final int indexCountCap =
+        isWide ? selectedCount.clamp(1, 50) : selectedCount.clamp(1, 20);
+    final double buttonWidth = isWide ? width * 0.25 : width;
+    final double ideasListWidth = isWide ? width * 0.9 : width;
+    final double countPickerWidth =
+        isWide ? width * 0.1 : (width * 0.35).clamp(120, 220);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Main Tab Toggle
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedScale(
+              scale: selectedMainTab == 'Image' ? 1.125 : 1.0,
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              child: ChoiceChip(
+                label: Text(
+                  'Image',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    color: selectedMainTab == 'Image' ? lightColor : darkColor,
+                  ),
+                ),
+                selected: selectedMainTab == 'Image',
+                onSelected: (_) => setState(() => selectedMainTab = 'Image'),
+                backgroundColor: lightColor,
+                selectedColor: darkColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
+                pressElevation: 0,
+                showCheckmark: false,
+              ),
+            ),
+            const SizedBox(width: 12),
+            AnimatedScale(
+              scale: selectedMainTab == 'Text' ? 1.125 : 1.0,
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              child: ChoiceChip(
+                label: Text(
+                  'Text',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    color: selectedMainTab == 'Text' ? lightColor : darkColor,
+                  ),
+                ),
+                selected: selectedMainTab == 'Text',
+                onSelected: (_) => setState(() {
+                  selectedMainTab = 'Text';
+                  selectedImageSubTab = 'Quote';
+                  includeSource = false;
+                  selectedTone = null;
+                }),
+                backgroundColor: lightColor,
+                selectedColor: darkColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
+                pressElevation: 0,
+                showCheckmark: false,
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 24),
+
+        // Sub-tabs under Image
+        if (selectedMainTab == 'Image')
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 12,
+            children: ['Quote', 'Fact', 'Tip'].map((type) {
+              final bool isSelected = selectedImageSubTab == type;
+              return AnimatedScale(
+                scale: isSelected ? 1.125 : 1.0,
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOut,
+                child: ChoiceChip(
+                  label: Text(
+                    type,
+                    style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: isSelected ? lightColor : darkColor),
+                  ),
+                  selected: isSelected,
+                  onSelected: (_) => setState(() {
+                    selectedImageSubTab = type;
+                    includeSource = false;
+                    selectedTone = null;
+                  }),
+                  backgroundColor: lightColor,
+                  selectedColor: darkColor,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                  pressElevation: 0,
+                  showCheckmark: false,
+                ),
+              );
+            }).toList(),
+          ),
+
+        const SizedBox(height: 28),
+
+        // Toggle Advanced Panel
+        MyTextButton(
+          onPressed: () => setState(() => showAdvanced = !showAdvanced),
+          child: Text(
+            showAdvanced
+                ? 'Hide Advanced Customization'
+                : 'Show Advanced Customization (Style, Tone, Source)',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+
+        if (showAdvanced) buildAdvancedPanel(width, isWide),
+
+        const SizedBox(height: 28),
+
+        // Idea Count Picker
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'Ideas to generate in one click:',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(width: 12),
+            MyDropDown(
+              width: countPickerWidth,
+              value: selectedCount.toString(),
+              items: const ['1', '5', '10', '30', '50', '100'],
+              onChanged: (value) => setState(
+                () => selectedCount = int.parse(value!),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 28),
+
+        // Generate Button
+        MyButton(
+          width: buttonWidth,
+          text:
+              'Generate $selectedCount${generatedIdeas.isNotEmpty ? ' More' : ''} ${selectedCount > 1 ? 'Ideas' : 'Idea'}',
+          isLoading: isLoading,
+          onTap: isLoading ? null : () async => generateIdeas(),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Unreviewed Toggle
+        if (unreviewedIdeas.isNotEmpty)
+          Tooltip(
+            message: 'Ideas generated earlier but not accepted or rejected',
+            child: MyTextButton(
+              onPressed: () {
+                setState(() {
+                  if (showUnreviewed) {
+                    showUnreviewed = false;
+                    removeUnreviewedFromGenerated();
+                  } else {
+                    generatedIdeas = [...unreviewedIdeas];
+                    showUnreviewed = true;
+                  }
+                });
+              },
+              icon: const Icon(Icons.history, size: 18),
+              child: Text(
+                showUnreviewed
+                    ? "Hide Unreviewed Ideas"
+                    : "Show Unreviewed Ideas",
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ),
+
+        const SizedBox(height: 32),
+
+        // Generated Ideas
+        if (generatedIdeas.isNotEmpty)
+          SizedBox(
+            width: ideasListWidth,
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: const ClampingScrollPhysics(),
+              itemCount: generatedIdeas.length,
+              itemBuilder: (context, index) {
+                final idea = generatedIdeas[index];
+                final String ideaText = idea['response']?.toString() ?? '';
+                final String ideaSource = idea['source']?.toString() ?? '';
+                final String ideaBackground =
+                    idea['background']?.toString() ?? '';
+
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOut,
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: lightColor.withOpacity(0.2),
+                    border: Border.all(
+                      color: darkColor.withOpacity(0.2),
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: ListTile(
+                    title: Text(
+                      ideaText,
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (idea['category'] != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              idea['category'].toString(),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: darkColor),
+                            ),
+                          ),
+                        if (ideaSource.isNotEmpty) const SizedBox(height: 4),
+                        if (ideaSource.isNotEmpty)
+                          Text(
+                            'Source: $ideaSource',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        if (ideaBackground.isNotEmpty)
+                          const SizedBox(height: 4),
+                        if (ideaBackground.isNotEmpty)
+                          Text(
+                            'Background: $ideaBackground',
+                            maxLines: isWide ? null : 2,
+                            overflow: isWide
+                                ? TextOverflow.visible
+                                : TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.blueGrey,
+                            ),
+                          ),
+                      ],
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Accept',
+                          icon: const Icon(Icons.check, color: Colors.green),
+                          onPressed: () async {
+                            setState(() {
+                              generatedIdeas.remove(idea);
+                            });
+                            await acceptIdea(idea);
+                          },
+                        ),
+                        IconButton(
+                          tooltip: 'Reject',
+                          icon: const Icon(Icons.close, color: Colors.red),
+                          onPressed: () async {
+                            setState(() {
+                              generatedIdeas.remove(idea);
+                            });
+                            await removeIdeaFromPrefs(idea);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+        if (isLoading)
+          SizedBox(
+            width: ideasListWidth,
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: const ClampingScrollPhysics(),
+              itemCount: indexCountCap,
+              itemBuilder: (_, __) => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: ShimmerRow(),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
 
-// OPT: Extract tiny shimmer row to reduce build method size & enable const usage
+// Tiny shimmer row
 class ShimmerRow extends StatelessWidget {
   const ShimmerRow({super.key});
 
@@ -983,7 +900,9 @@ class ShimmerRow extends StatelessWidget {
         height: 60,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(
+            16,
+          ),
         ),
       ),
     );

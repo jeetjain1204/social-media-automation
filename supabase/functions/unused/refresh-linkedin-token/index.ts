@@ -142,7 +142,7 @@
 //       .update({
 //         access_token: encryptedAccessToken,
 //         refresh_token: encryptedRefreshToken,
-//         token_expires_at: new Date(Date.now() + (newTokenData.expires_in * 1000)),
+//         token_expires_at: new Date(Date.now() + (newTokenData.expires_in * 1000),),
 //       })
 //       .eq("user_id", user_id)
 //       .eq("author_urn", author_urn)

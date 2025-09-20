@@ -173,7 +173,9 @@ class _SignUpPageState extends State<SignUpPage> {
                   style: TextStyle(color: darkColor),
                   decoration: InputDecoration(
                     labelText: 'Email',
-                    labelStyle: TextStyle(color: darkColor.withOpacity(0.7)),
+                    labelStyle: TextStyle(
+                      color: darkColor.withOpacity(0.7),
+                    ),
                     filled: true,
                     fillColor: const Color(0xFFF1F7FF),
                     contentPadding: const EdgeInsets.symmetric(
@@ -201,7 +203,9 @@ class _SignUpPageState extends State<SignUpPage> {
                   },
                   decoration: InputDecoration(
                     labelText: 'Password',
-                    labelStyle: TextStyle(color: darkColor.withOpacity(0.7)),
+                    labelStyle: TextStyle(
+                      color: darkColor.withOpacity(0.7),
+                    ),
                     filled: true,
                     fillColor: const Color(0xFFF1F7FF),
                     contentPadding: const EdgeInsets.symmetric(

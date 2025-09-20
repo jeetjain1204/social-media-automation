@@ -75,7 +75,7 @@ class _IdeaCardState extends State<IdeaCard> {
                   children: [
                     // ------- Text & optional source -----------
                     SizedBox(
-                      width: widget.width * 0.8,
+                      width: widget.width * 0.66,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

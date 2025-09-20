@@ -48,7 +48,9 @@ class _TemplatePickerDialogState extends State<TemplatePickerDialog> {
     final Color light = lightColor;
 
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       title: Text(
         'Select a Template',
         style: TextStyle(

@@ -104,7 +104,7 @@ class _MyTextFieldState extends State<MyTextField> {
             AnimatedContainer(
               duration: _animDuration,
               width: widget.width,
-              height: height,
+              height: MediaQuery.sizeOf(context).width >= 900 ? height : 60,
               margin: margin,
               decoration: BoxDecoration(
                 color: enabled ? fillColor : fillColor.withOpacity(0.5),

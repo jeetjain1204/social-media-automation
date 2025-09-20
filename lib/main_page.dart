@@ -14,52 +14,64 @@ class MainPage extends StatefulWidget {
   final Widget child;
 
   @override
-  State<MainPage> createState() => _MainPageState();
+  State<MainPage> createState() => MainPageState();
 }
 
-class _MainPageState extends State<MainPage> {
+class MainPageState extends State<MainPage> {
   final supabase = Supabase.instance.client;
-
   bool isCheckingSocials = true;
+  int pendingChecks = 2;
+  String location = '/home/idea';
 
-  // OPT: Keep cancellable handle to prevent late UI work and accidental setState after dispose.
+  void doneOne() {
+    if (!mounted) return;
+    if (--pendingChecks <= 0 && isCheckingSocials) {
+      takingLongerTimer?.cancel();
+      takingLongerTimer = null;
+      setState(() => isCheckingSocials = false);
+    }
+  }
+
   Timer? takingLongerTimer;
 
   @override
   void initState() {
     super.initState();
-
-    // OPT: Run both independent checks in parallel to minimize total wait time.
-    // Avoids serial blocking that hurts LCP.
     checkPlanDetails();
     checkSocialConnections();
-
-    // OPT: Defensive "taking longer" UX with a cancellable timer to avoid late snackbars.
     takingLongerTimer = Timer(const Duration(seconds: 10), () {
       if (!mounted || !isCheckingSocials) return;
-      mySnackBar(context, 'This is taking longer than usual...');
-      // OPT: Allow user to interact; we fail open here while other checks continue.
+      postFrame(
+        () => mySnackBar(
+          context,
+          'This is taking longer than usual...',
+        ),
+      );
       setState(() => isCheckingSocials = false);
     });
   }
 
   @override
   void dispose() {
-    // OPT: Ensure no pending timer or setState fires after dispose.
     takingLongerTimer?.cancel();
     takingLongerTimer = null;
     super.dispose();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    location = GoRouterState.of(context).matchedLocation;
+  }
+
   Future<void> checkPlanDetails() async {
     final user = supabase.auth.currentUser;
     if (user == null) {
-      if (mounted) context.go('/login');
+      if (mounted) nav('/login');
       return;
     }
 
     try {
-      // OPT: Only fetch columns actually used to reduce payload.
       final subscription = await supabase
           .from('user_subscription_status')
           .select(
@@ -67,23 +79,22 @@ class _MainPageState extends State<MainPage> {
           )
           .eq('user_id', user.id)
           .maybeSingle()
-          .timeout(
-            const Duration(seconds: 8),
-          ); // OPT: Bound network time for better TBT.
+          .timeout(const Duration(seconds: 8));
 
       final now = DateTime.now().toUtc();
 
       if (subscription == null) {
         if (!mounted) return;
-        mySnackBar(
-          context,
-          'No active plan found. Starting your free trial...',
+        postFrame(
+          () => mySnackBar(
+            context,
+            'No active plan found. Starting your free trial...',
+          ),
         );
-        context.go('/free-trial');
+        nav('/free-trial');
         return;
       }
 
-      // OPT: Safe ISO parsing; Supabase returns ISO8601 strings.
       final trialEndsIso = subscription['trial_ends_at'] as String?;
       final planEndsIso = subscription['plan_ends_at'] as String?;
       final trialEnds = trialEndsIso == null
@@ -96,15 +107,16 @@ class _MainPageState extends State<MainPage> {
       final isSubscriber =
           (subscription['is_active_subscriber'] as bool?) ?? false;
 
-      // Behavior preserved: gate on expired/non‑subscriber state.
       if ((!isTrialActive || (trialEnds != null && now.isAfter(trialEnds))) &&
           !isSubscriber) {
         if (!mounted) return;
-        mySnackBar(
-          context,
-          'Your plan has expired. Please upgrade to continue',
+        postFrame(
+          () => mySnackBar(
+            context,
+            'Your plan has expired. Pls upgrade to continue',
+          ),
         );
-        context.go('/payment');
+        nav('/payment');
         return;
       }
 
@@ -112,20 +124,22 @@ class _MainPageState extends State<MainPage> {
       final planExpired = planEnds == null || now.isAfter(planEnds);
 
       if ((trialExpired || !isTrialActive) && (!isSubscriber || planExpired)) {
-        if (mounted) context.go('/payment');
+        if (mounted) nav('/payment');
         return;
       }
     } on TimeoutException {
-      // OPT: Network hiccup shouldn’t block UX; skip routing to avoid thrash.
+      // ignore
     } catch (_) {
-      // OPT: Swallow unexpected errors locally; central error logging can capture details elsewhere.
+      // ignore
     }
+
+    doneOne();
   }
 
   Future<void> checkSocialConnections() async {
     final user = supabase.auth.currentUser;
     if (user == null) {
-      if (mounted) context.push('/login');
+      if (mounted) nav('/login');
       return;
     }
 
@@ -133,7 +147,6 @@ class _MainPageState extends State<MainPage> {
     const platforms = ['linkedin', 'facebook'];
 
     try {
-      // OPT: Single round‑trip using IN filter keeps payload small and avoids client filtering.
       final rows = await supabase
           .from('social_accounts')
           .select(
@@ -141,10 +154,7 @@ class _MainPageState extends State<MainPage> {
           )
           .eq('user_id', user.id)
           .eq('is_disconnected', false)
-          .inFilter(
-            'platform',
-            platforms,
-          ) // OPT: Keep as .inFilter per your current SDK.
+          .inFilter('platform', platforms)
           .timeout(const Duration(seconds: 8));
 
       bool atLeastOneConnected = false;
@@ -167,53 +177,61 @@ class _MainPageState extends State<MainPage> {
             connectedAt == null ? 999 : now.difference(connectedAt).inDays;
 
         if ((daysOld > 50 || needsReconnect) && mounted) {
-          mySnackBar(
-            context,
-            'Your $platform connection is over 50 days old or expired. Please reconnect',
+          postFrame(
+            () => mySnackBar(
+              context,
+              'Your $platform connection is over 50 days old or expired. Please reconnect',
+            ),
           );
-          context.go(
-            platform == 'linkedin' ? '/connect/linkedin' : '/connect/meta',
-          );
+
+          nav(platform == 'linkedin' ? '/connect/linkedin' : '/connect/meta');
           return;
         }
       }
 
       if (!atLeastOneConnected && mounted) {
-        mySnackBar(context, "You haven't connected any platform yet.");
-        context.go('/connect');
+        postFrame(
+          () => mySnackBar(
+            context,
+            "You haven't connected any platform yet.",
+          ),
+        );
+        nav('/connect');
         return;
       }
     } on TimeoutException {
-      // OPT: Fail open for UX; we’ll drop the gate spinner below.
+      // ignore
     } catch (_) {
-      // OPT: Non‑fatal; proceed to clear spinner.
+      // ignore
     }
 
     if (!mounted) return;
-
-    // OPT: Clear gate spinner as soon as we’re done; also stop the "taking longer" timer.
     takingLongerTimer?.cancel();
     takingLongerTimer = null;
 
-    setState(() {
-      isCheckingSocials = false;
+    doneOne();
+  }
+
+  void nav(String path) {
+    if (!mounted) return;
+    takingLongerTimer?.cancel();
+    takingLongerTimer = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.go(path);
     });
   }
 
-  List<CollapsibleItem> getSidebarItems(BuildContext context) {
-    // OPT: Cheaper location access than building a Uri; reduces string work every build.
-    final location = GoRouterState.of(context).fullPath ??
-        GoRouterState.of(context).path ??
-        '/home/generator';
-
-    return <CollapsibleItem>[
+  List<CollapsibleItem> sidebarItems(BuildContext context) {
+    return [
       CollapsibleItem(
         text: 'Idea Generator',
         icon: location.startsWith('/home/idea')
             ? Icons.lightbulb
             : Icons.lightbulb_outline,
         isSelected: location.startsWith('/home/idea'),
-        onPressed: () => context.go('/home/idea'),
+        onPressed: () {
+          if (location != '/home/idea') nav('/home/idea');
+        },
       ),
       CollapsibleItem(
         text: 'AI Generator',
@@ -221,7 +239,9 @@ class _MainPageState extends State<MainPage> {
             ? Icons.auto_awesome
             : Icons.auto_awesome_outlined,
         isSelected: location.startsWith('/home/generator'),
-        onPressed: () => context.go('/home/generator'),
+        onPressed: () {
+          if (location != '/home/generator') nav('/home/generator');
+        },
       ),
       CollapsibleItem(
         text: 'History',
@@ -229,7 +249,9 @@ class _MainPageState extends State<MainPage> {
             ? Icons.history
             : Icons.history_outlined,
         isSelected: location.startsWith('/home/history'),
-        onPressed: () => context.go('/home/history'),
+        onPressed: () {
+          if (location != '/home/history') nav('/home/history');
+        },
       ),
       CollapsibleItem(
         text: 'Profile',
@@ -237,18 +259,34 @@ class _MainPageState extends State<MainPage> {
             ? Icons.person
             : Icons.person_outline,
         isSelected: location.startsWith('/home/profile'),
-        onPressed: () => context.go('/home/profile'),
+        onPressed: () {
+          if (location != '/home/profile') nav('/home/profile');
+        },
       ),
       CollapsibleItem(
         text: 'Logout',
         icon: Icons.logout,
         onPressed: () async {
-          final confirmed = await showLogoutDialog();
-          if (confirmed) {
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (c) => AlertDialog(
+              title: const Text('Logout'),
+              content: const Text('Are you sure you want to logout?'),
+              actions: [
+                MyTextButton(
+                  onPressed: () => c.pop(false),
+                  child: const Text('Cancel'),
+                ),
+                MyTextButton(
+                  onPressed: () => c.pop(true),
+                  child: const Text('Logout'),
+                ),
+              ],
+            ),
+          );
+          if (confirmed == true) {
             await supabase.auth.signOut();
-            if (context.mounted) {
-              context.go('/login');
-            }
+            if (context.mounted) nav('/login');
           }
         },
         isSelected: false,
@@ -256,30 +294,43 @@ class _MainPageState extends State<MainPage> {
     ];
   }
 
-  Future<bool> showLogoutDialog() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => const AlertDialog(
-        // OPT: const trees reduce rebuild work for simple static dialogs.
-        title: Text('Logout'),
-        content: Text('Are you sure you want to logout?'),
-        actions: [_DialogCancelButton(), _DialogConfirmButton()],
-      ),
-    );
-    return result ?? false;
+  int currentIndex(BuildContext context) {
+    if (location.startsWith('/home/idea')) return 0;
+    if (location.startsWith('/home/generator')) return 1;
+    if (location.startsWith('/home/history')) return 2;
+    if (location.startsWith('/home/profile')) return 3;
+    return 1;
+  }
+
+  void selectTab(BuildContext context, int index) {
+    final targets = [
+      '/home/idea',
+      '/home/generator',
+      '/home/history',
+      '/home/profile'
+    ];
+    final target = targets[index];
+    if (location == target) return; // no-op
+    nav(target);
+  }
+
+  void postFrame(void Function() f) {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) f();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     if (isCheckingSocials) {
       return Scaffold(
-        // OPT: const Scaffold subtree removes rebuild churn while spinner is shown.
         body: Center(
           child: Semantics(
             label: 'Checking social connections...',
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+              children: const [
                 MyCircularProgressIndicator(),
                 SizedBox(height: 16),
                 Text(
@@ -293,66 +344,103 @@ class _MainPageState extends State<MainPage> {
       );
     }
 
+    final width = MediaQuery.sizeOf(context).width;
+
+    if (width >= 900) {
+      return Scaffold(
+        body: RepaintBoundary(
+          child: CollapsibleSidebar(
+            isCollapsed: true,
+            items: sidebarItems(context),
+            title: '',
+            showTitle: false,
+            body: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              layoutBuilder: (current, previous) => current ?? const SizedBox(),
+              child: KeyedSubtree(
+                key: ValueKey(location),
+                child: widget.child,
+              ),
+            ),
+            backgroundColor: const Color(0xFFF8FAFC),
+            selectedTextColor: darkColor,
+            selectedIconColor: darkColor,
+            unselectedIconColor: lightColor,
+            unselectedTextColor: lightColor,
+            selectedIconBox: lightColor,
+            iconSize: 28,
+            maxWidth: 300,
+            minWidth: 72,
+            toggleButtonIcon: Icons.menu,
+            showToggleButton: true,
+            topPadding: 24,
+            bottomPadding: 12,
+            itemPadding: 12,
+            borderRadius: 16,
+            screenPadding: 0,
+            fitItemsToBottom: false,
+            badgeBackgroundColor: darkColor,
+            badgeTextColor: lightColor,
+            avatarBackgroundColor: lightColor,
+            sidebarBoxShadow: const [],
+          ),
+        ),
+      );
+    }
+
+    final index = location.startsWith('/home/idea')
+        ? 0
+        : location.startsWith('/home/generator')
+            ? 1
+            : location.startsWith('/home/history')
+                ? 2
+                : location.startsWith('/home/profile')
+                    ? 3
+                    : 1;
+
     return Scaffold(
-      // OPT: Isolate the heavy body from sidebar animations to cut repaints.
-      body: RepaintBoundary(
-        child: CollapsibleSidebar(
-          isCollapsed: true,
-          items: getSidebarItems(context),
-          title: '',
-          showTitle: false,
-          body: RepaintBoundary(
-            child: widget.child,
-          ), // OPT: isolate page content too.
-          backgroundColor: const Color(0xFFF8FAFC),
-          selectedTextColor: darkColor,
-          selectedIconColor: darkColor,
-          unselectedIconColor: lightColor,
-          unselectedTextColor: lightColor,
-          selectedIconBox: lightColor,
-          iconSize: 28,
-          maxWidth: 300,
-          minWidth: 72,
-          toggleButtonIcon: Icons.menu,
-          showToggleButton: true,
-          topPadding: 24,
-          bottomPadding: 12,
-          itemPadding: 12,
-          borderRadius: 16,
-          screenPadding: 0,
-          fitItemsToBottom: false,
-          badgeBackgroundColor: darkColor,
-          badgeTextColor: lightColor,
-          avatarBackgroundColor: lightColor,
-          sidebarBoxShadow: const [], // OPT: const list literal for zero‑alloc.
+      body: SafeArea(
+        child: RepaintBoundary(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            layoutBuilder: (current, previous) => current ?? const SizedBox(),
+            child: KeyedSubtree(
+              key: ValueKey(location),
+              child: widget.child,
+            ),
+          ),
         ),
       ),
-    );
-  }
-}
-
-// OPT: Extracted tiny dialog action buttons as widgets to honor "no inline widget functions"
-// and to keep the AlertDialog const‑constructible above.
-class _DialogCancelButton extends StatelessWidget {
-  const _DialogCancelButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return MyTextButton(
-      onPressed: () => context.pop(false),
-      child: const Text('Cancel'),
-    );
-  }
-}
-
-class _DialogConfirmButton extends StatelessWidget {
-  const _DialogConfirmButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return MyTextButton(
-      onPressed: () => context.pop(true),
-      child: const Text('Logout'),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: index,
+        onDestinationSelected: (i) => selectTab(context, i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.lightbulb_outline),
+            selectedIcon: Icon(Icons.lightbulb),
+            label: 'Idea',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome),
+            label: 'AI',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'History',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
+      ),
     );
   }
 }

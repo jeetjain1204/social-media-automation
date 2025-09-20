@@ -153,7 +153,10 @@ class AutoSkeletonState extends State<AutoSkeleton>
             size.height,
           );
           path.addRRect(
-            RRect.fromRectAndRadius(rect, Radius.circular(widget.borderRadius)),
+            RRect.fromRectAndRadius(
+              rect,
+              Radius.circular(widget.borderRadius),
+            ),
           );
           count++;
         }

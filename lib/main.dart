@@ -50,7 +50,6 @@ import 'package:blob/pages/profile_page.dart' deferred as prof;
 import 'package:blob/pages/history_page.dart' deferred as hist;
 import 'package:blob/pages/post_page.dart' deferred as post;
 
-// TODO: CONVERT THIS TO APP AND PUBLISH ON PLAY STORE
 // TODO: MAKE PAYMENTS AND OTHER FUNCTIONS UNHACKABLE AND COMPLETELY SECURE
 // TODO: POST REAL HISTORY FETCH (NOT CONFIRMED)
 // TODO: PERSONA ADAPTATION BASED ON EXISTING PROFILE (IF AVAILABLE)
@@ -76,11 +75,21 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ProfileNotifier()),
-        ChangeNotifierProvider(create: (_) => ForegroundNotifier()),
-        ChangeNotifierProvider(create: (_) => IdeaNotifier()),
-        ChangeNotifierProvider(create: (_) => ClearNotifier()),
-        ChangeNotifierProvider(create: (_) => BrandProfileDraft()),
+        ChangeNotifierProvider(
+          create: (_) => ProfileNotifier(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ForegroundNotifier(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => IdeaNotifier(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ClearNotifier(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => BrandProfileDraft(),
+        ),
       ],
       child: const MyApp(),
     ),
@@ -254,8 +263,14 @@ final router = GoRouter(
     ),
 
     // Auth
-    GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
-    GoRoute(path: '/signup', builder: (_, __) => const SignUpPage()),
+    GoRoute(
+      path: '/login',
+      builder: (_, __) => const LoginPage(),
+    ),
+    GoRoute(
+      path: '/signup',
+      builder: (_, __) => const SignUpPage(),
+    ),
 
     // Onboarding
     GoRoute(
@@ -631,12 +646,18 @@ final router = GoRouter(
     ),
 
     // Connect flows
-    GoRoute(path: '/connect', builder: (_, __) => const ConnectPage()),
+    GoRoute(
+      path: '/connect',
+      builder: (_, __) => const ConnectPage(),
+    ),
     GoRoute(
       path: '/connect/linkedin',
       builder: (_, __) => const ConnectLinkedInPage(),
     ),
-    GoRoute(path: '/connect/meta', builder: (_, __) => const ConnectMetaPage()),
+    GoRoute(
+      path: '/connect/meta',
+      builder: (_, __) => const ConnectMetaPage(),
+    ),
     GoRoute(
       path: '/connect-linkedin-pages',
       builder: (_, __) => const ConnectLinkedInPagesPage(),
@@ -660,8 +681,14 @@ final router = GoRouter(
     ),
 
     // Misc
-    GoRoute(path: '/free-trial', builder: (_, __) => const FreeTrialPage()),
-    GoRoute(path: '/payment', builder: (_, __) => const PaymentPage()),
+    GoRoute(
+      path: '/free-trial',
+      builder: (_, __) => const FreeTrialPage(),
+    ),
+    GoRoute(
+      path: '/payment',
+      builder: (_, __) => const PaymentPage(),
+    ),
     GoRoute(
       path: '/platform/:platformName',
       builder: (_, state) =>
@@ -818,7 +845,9 @@ final _appTheme = ThemeData(
     selectedShadowColor: Colors.transparent,
     shadowColor: Colors.transparent,
     surfaceTintColor: Colors.transparent,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(8),
+    ),
     elevation: 0,
     pressElevation: 0,
     iconTheme: const IconThemeData(size: 16),
@@ -834,7 +863,9 @@ final _appTheme = ThemeData(
     textStyle: TextStyle(color: lightColor, fontSize: 12),
   ),
   checkboxTheme: CheckboxThemeData(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(4),
+    ),
     side: BorderSide(color: darkColor.withOpacity(0.3), width: 1.5),
     checkColor: MaterialStatePropertyAll<Color>(Colors.white),
     fillColor: MaterialStateProperty.resolveWith<Color>((states) {
@@ -843,7 +874,9 @@ final _appTheme = ThemeData(
         return darkColor.withOpacity(0.1);
       return lightColor;
     }),
-    overlayColor: MaterialStatePropertyAll<Color>(darkColor.withOpacity(0.1)),
+    overlayColor: MaterialStatePropertyAll<Color>(
+      darkColor.withOpacity(0.1),
+    ),
     visualDensity: VisualDensity.compact,
     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
   ),

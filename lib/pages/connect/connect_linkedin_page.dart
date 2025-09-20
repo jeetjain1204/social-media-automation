@@ -59,7 +59,9 @@ class _ConnectLinkedInPageState extends State<ConnectLinkedInPage> {
             .eq('is_disconnected', false)
             .eq('user_id', userId)
             .maybeSingle()
-            .timeout(const Duration(seconds: 10)),
+            .timeout(
+              const Duration(seconds: 10),
+            ),
         retryIf: (e) => e is SocketException || e is TimeoutException,
         maxAttempts: 3,
         delayFactor: const Duration(milliseconds: 500),
@@ -159,8 +161,10 @@ class _ConnectLinkedInPageState extends State<ConnectLinkedInPage> {
       }
 
       final response = await retry(
-        () => supabase.functions.invoke('get-oauth-url',
-            body: {'user_id': userId}).timeout(const Duration(seconds: 10)),
+        () => supabase.functions
+            .invoke('get-oauth-url', body: {'user_id': userId}).timeout(
+          const Duration(seconds: 10),
+        ),
         retryIf: (e) => e is SocketException || e is TimeoutException,
         maxAttempts: 3,
         delayFactor: const Duration(milliseconds: 500),

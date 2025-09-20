@@ -38,7 +38,9 @@ class ProfileService {
             )
             .eq('user_id', uid)
             .maybeSingle()
-            .timeout(const Duration(seconds: 8)), // OPT: Bound network time
+            .timeout(
+              const Duration(seconds: 8),
+            ), // OPT: Bound network time
         // OPT: Retry only on timeouts (cross‑platform safe). Avoids retrying logic errors (4xx).
         retryIf: (e) => e is TimeoutException,
       );
@@ -94,7 +96,9 @@ class ProfileService {
             .select(
                 'id') // OPT: minimal data back; enough to confirm write and preserve prior behavior
             .maybeSingle()
-            .timeout(const Duration(seconds: 10)),
+            .timeout(
+              const Duration(seconds: 10),
+            ),
         // OPT: Retry only on timeouts to avoid duplicate logical writes.
         retryIf: (e) => e is TimeoutException,
       );

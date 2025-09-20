@@ -193,7 +193,9 @@ class _PaymentPageState extends State<PaymentPage> {
         () => supabase.functions.invoke(
           'create-subscription',
           body: {'user_id': uid, 'duration': selectedDuration},
-        ).timeout(const Duration(seconds: 15)),
+        ).timeout(
+          const Duration(seconds: 15),
+        ),
       );
 
       if (response.status != 200) {
@@ -278,7 +280,9 @@ class _PaymentPageState extends State<PaymentPage> {
         () => supabase.functions.invoke(
           'paypal-create-subscription',
           body: {'userId': uid, 'duration': selectedDuration},
-        ).timeout(const Duration(seconds: 15)),
+        ).timeout(
+          const Duration(seconds: 15),
+        ),
       );
 
       if (response.status != 200) {

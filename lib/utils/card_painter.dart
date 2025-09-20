@@ -314,7 +314,11 @@ class CardPainter extends CustomPainter {
 
     canvas.drawImageRect(
       image,
-      Offset.zero & Size(image.width.toDouble(), image.height.toDouble()),
+      Offset.zero &
+          Size(
+            image.width.toDouble(),
+            image.height.toDouble(),
+          ),
       Rect.fromLTWH(pos.dx, pos.dy, dim, dim),
       Paint(),
     );

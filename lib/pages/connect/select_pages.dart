@@ -62,7 +62,9 @@ class _SelectPagesState extends State<SelectPages> {
         () => supabase.functions.invoke(
           'get-linkedin-pages',
           body: {'access_token': widget.accessToken},
-        ).timeout(const Duration(seconds: 15)),
+        ).timeout(
+          const Duration(seconds: 15),
+        ),
         retryIf: (e) => e is SocketException || e is TimeoutException,
         maxAttempts: 3,
         delayFactor: const Duration(milliseconds: 450), // OPT: modest backoff
@@ -125,7 +127,9 @@ class _SelectPagesState extends State<SelectPages> {
               'ig_user_id': p['ig_user_id'],
             },
           },
-        ).timeout(const Duration(seconds: 20)),
+        ).timeout(
+          const Duration(seconds: 20),
+        ),
         retryIf: (e) => e is SocketException || e is TimeoutException,
         maxAttempts: 3,
         delayFactor: const Duration(milliseconds: 500),
@@ -163,10 +167,10 @@ class _SelectPagesState extends State<SelectPages> {
 
     try {
       final res = await retry(
-        () => supabase.functions.invoke(fn, body: {
-          ...body,
-          'user_id': uid
-        }).timeout(const Duration(seconds: 20)),
+        () => supabase.functions
+            .invoke(fn, body: {...body, 'user_id': uid}).timeout(
+          const Duration(seconds: 20),
+        ),
         retryIf: (e) => e is SocketException || e is TimeoutException,
         maxAttempts: 3,
         delayFactor: const Duration(milliseconds: 500),
@@ -205,7 +209,10 @@ class _SelectPagesState extends State<SelectPages> {
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
         backgroundColor: Colors.white,
-        title: Text(title, style: const TextStyle(color: Color(0xFF1A1A1A))),
+        title: Text(
+          title,
+          style: const TextStyle(color: Color(0xFF1A1A1A)),
+        ),
         elevation: 1,
         iconTheme: const IconThemeData(color: Colors.black),
       ),

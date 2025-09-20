@@ -384,7 +384,9 @@ class _SelectionStepState extends State<SelectionStep> {
                                 ],
                               ),
                             )
-                          : const SizedBox.shrink(key: ValueKey('no-error')),
+                          : const SizedBox.shrink(
+                              key: ValueKey('no-error'),
+                            ),
                     ),
 
                     // Continue Button

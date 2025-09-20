@@ -52,7 +52,7 @@
 //                 ),
 //               ),
 //             ),
-//             topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+//             topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false),),
 //             bottomTitles: AxisTitles(
 //               sideTitles: SideTitles(
 //                 showTitles: true,
@@ -85,7 +85,7 @@
 //             LineChartBarData(
 //               spots: List.generate(
 //                 widget.data.length,
-//                 (i) => FlSpot(i.toDouble(), widget.data[i].toDouble()),
+//                 (i) => FlSpot(i.toDouble(), widget.data[i].toDouble(),),
 //               ),
 //               isCurved: true,
 //               color: widget.color,

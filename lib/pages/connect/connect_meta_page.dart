@@ -160,7 +160,9 @@ class _ConnectMetaPageState extends State<ConnectMetaPage> {
 
       // OPT: Compact, URL‑safe state. No PII beyond user id (already present in session).
       final state = base64Url.encode(
-        utf8.encode(jsonEncode({'u': uid, 't': target})),
+        utf8.encode(
+          jsonEncode({'u': uid, 't': target}),
+        ),
       );
 
       // OPT: Keep scopes minimal and explicit; same behavior preserved.

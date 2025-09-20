@@ -33,7 +33,9 @@ Future<List<String>?> showPlatformPicker(
     builder: (context) {
       return AlertDialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         title: const Text(
           'Select Platforms',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -134,7 +136,9 @@ Future<Map<String, List<String>>?> showPostTypePicker(
       final maxDialogHeight = MediaQuery.of(context).size.height * 0.7;
 
       return AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         title: const Text(
           'Select Post Types',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),

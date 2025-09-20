@@ -17,16 +17,16 @@ import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path/path.dart' as path;
 
+const double kDesktopBreak = 900;
+
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
-
   @override
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
 class _ProfilePageState extends State<ProfilePage> {
   final backgroundScrollController = ScrollController();
-
   final brandNameController = TextEditingController();
   final brandNameFocusNode = FocusNode();
 
@@ -39,7 +39,6 @@ class _ProfilePageState extends State<ProfilePage> {
   bool isAddingBackground = false;
   bool isEditingName = false;
   bool isUpdatingName = false;
-  bool isLoading = true;
 
   List imageStyleSuggestions = ['Minimal', 'Realistic', 'Sci - fi'];
   List fontSuggestions = ['Playful'];
@@ -49,31 +48,24 @@ class _ProfilePageState extends State<ProfilePage> {
   List? connectedPlatforms;
   List? canConnectPlatforms;
 
-  // OPT: cache for signed URLs to prevent repeated network calls on rebuilds
-  final Map<String, Future<String?>> _signedUrlCache = {}; // OPT
+  final Map<String, Future<String?>> _signedUrlCache = {};
 
   @override
   void initState() {
     super.initState();
     fetchProfile();
     getConnectedPlatforms();
-
-    final profileNotifier = context.read<ProfileNotifier>();
-    profileNotifier.addListener(() {
-      fetchProfile();
-    });
+    context.read<ProfileNotifier>().addListener(fetchProfile);
   }
 
   @override
   void dispose() {
-    // OPT: dispose controllers to avoid leaks
     backgroundScrollController.dispose();
     brandNameController.dispose();
     brandNameFocusNode.dispose();
     super.dispose();
   }
 
-  // OPT: small retry with backoff + jitter + timeout for network resilience
   Future<T> _withRetry<T>(
     Future<T> Function() fn, {
     int maxAttempts = 3,
@@ -88,13 +80,11 @@ class _ProfilePageState extends State<ProfilePage> {
         lastError = e;
         attempt++;
         if (attempt >= maxAttempts) break;
-        final factor = 1 << (attempt - 1); // 1,2
+        final factor = 1 << (attempt - 1);
         final jitterMs = baseDelay.inMilliseconds ~/ 2;
-        final delay =
-            Duration(milliseconds: baseDelay.inMilliseconds * factor) +
-                Duration(
-                  milliseconds: (DateTime.now().microsecond % (jitterMs + 1)),
-                );
+        final delay = Duration(
+                milliseconds: baseDelay.inMilliseconds * factor) +
+            Duration(milliseconds: DateTime.now().microsecond % (jitterMs + 1));
         await Future.delayed(delay);
       }
     }
@@ -107,7 +97,6 @@ class _ProfilePageState extends State<ProfilePage> {
     if (userId == null) return;
 
     try {
-      // OPT: fetch profile + brand kit in parallel with retry + timeout
       final results = await Future.wait([
         _withRetry<Map<String, dynamic>?>(
           () => supabase
@@ -128,16 +117,14 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       ]);
 
+      if (!mounted) return;
       final profileRes = results[0];
       final brandRes = results[1];
-
-      if (!mounted) return;
 
       if (field == null) {
         setState(() {
           profile = profileRes;
           brandKit = brandRes;
-          isLoading = false;
         });
         await loadSignedBackgrounds();
       } else {
@@ -145,21 +132,17 @@ class _ProfilePageState extends State<ProfilePage> {
           profile?[field] = profileRes?[field];
           brandKit?[field] = brandRes?[field];
         });
-        if (field == 'backgrounds') {
-          await loadSignedBackgrounds();
-        }
+        if (field == 'backgrounds') await loadSignedBackgrounds();
       }
     } catch (_) {
-      if (mounted) setState(() => isLoading = false);
+      // ignore
     }
   }
 
   Future<void> getConnectedPlatforms() async {
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser?.id;
-
     final List allPlatforms = ['linkedin', 'facebook', 'instagram'];
-
     if (userId == null) {
       if (mounted) context.go('/login');
       return;
@@ -175,39 +158,31 @@ class _ProfilePageState extends State<ProfilePage> {
             .timeout(const Duration(seconds: 12)),
       );
 
-      final myConnectedPlatforms = List<String>.from(
-        response.map((row) {
-          final p = row['platform']?.toString().toLowerCase() ?? '';
-          return p.isNotEmpty ? p : '';
-        }),
-      );
+      final myConnected = List<String>.from(response.map((row) {
+        final p = row['platform']?.toString().toLowerCase() ?? '';
+        return p.isNotEmpty ? p : '';
+      }));
 
       if (!mounted) return;
-
       setState(() {
-        connectedPlatforms = myConnectedPlatforms;
-        canConnectPlatforms = allPlatforms
-            .where((platform) => !myConnectedPlatforms.contains(platform))
-            .toList();
+        connectedPlatforms = myConnected;
+        canConnectPlatforms =
+            allPlatforms.where((p) => !myConnected.contains(p)).toList();
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         connectedPlatforms = [];
-        canConnectPlatforms = allPlatforms; // safe fallback
+        canConnectPlatforms = allPlatforms;
       });
     }
   }
 
   Future<void> createBrandKit() async {
-    setState(() {
-      isCreatingBrandKit = true;
-    });
-
+    setState(() => isCreatingBrandKit = true);
     try {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser?.id;
-
       final newKitRes = await _withRetry<Map<String, dynamic>?>(
         () => supabase
             .schema('brand_kit')
@@ -217,52 +192,32 @@ class _ProfilePageState extends State<ProfilePage> {
             .maybeSingle()
             .timeout(const Duration(seconds: 12)),
       );
-
       if (newKitRes == null || newKitRes['id'] == null) {
-        if (mounted) {
-          setState(() => isCreatingBrandKit = false);
-          mySnackBar(context, 'Failed to create Brand Kit');
-        }
-        return;
+        mySnackBar(context, 'Failed to create Brand Kit');
+      } else {
+        setState(() => brandKit = newKitRes);
       }
-
-      if (mounted) {
-        setState(() {
-          brandKit = newKitRes;
-          isCreatingBrandKit = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => isCreatingBrandKit = false);
-        mySnackBar(context, 'Some error occured');
-      }
+    } finally {
+      if (mounted) setState(() => isCreatingBrandKit = false);
     }
   }
 
-  // OPT: memoized signed-url getter to avoid repeated network calls on rebuilds
   Future<String?> getSignedImageUrl(String? p) async {
     if (p == null) return null;
-    if (_signedUrlCache.containsKey(p)) return _signedUrlCache[p]!; // OPT
-
+    if (_signedUrlCache.containsKey(p)) return _signedUrlCache[p]!;
     final future = _withRetry<String?>(
       () => Supabase.instance.client.storage
           .from('brand-kits')
           .createSignedUrl(p, 60 * 60)
           .timeout(const Duration(seconds: 10)),
     ).then((res) {
-      if (res == null || res.isEmpty) {
-        if (mounted)
-          mySnackBar(
-            context,
-            'Some error occured while fetching Brand Logo',
-          );
+      if ((res ?? '').isEmpty) {
+        mySnackBar(context, 'Some error occured while fetching Brand Logo');
         return null;
       }
       return res;
     });
-
-    _signedUrlCache[p] = future; // OPT: cache future immediately
+    _signedUrlCache[p] = future;
     return future;
   }
 
@@ -280,35 +235,28 @@ class _ProfilePageState extends State<ProfilePage> {
       allowMultiple: false,
       withData: true,
     );
-
     final file = result?.files.single;
 
     if (file == null || file.path == null || file.bytes == null) {
       setState(() {
-        if (isBrandKit) {
-          isChangingTransparentLogo = false;
-        } else {
-          isChangingLogo = false;
-        }
+        isChangingTransparentLogo = false;
+        isChangingLogo = false;
       });
-      if (mounted) {
-        mySnackBar(
-          context,
-          result?.count == 0 ? 'No Image Selected' : 'Some error occurred',
-        );
-      }
+      mySnackBar(
+        context,
+        result?.count == 0 ? 'No Image Selected' : 'Some error occurred',
+      );
       return;
     }
 
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser?.id;
     if (userId == null) {
-      if (mounted) mySnackBar(context, 'User not authenticated');
+      mySnackBar(context, 'User not authenticated');
       return;
     }
 
     final storage = supabase.storage;
-    // ignore: use_build_context_synchronously
     final draft = context.read<BrandProfileDraft>();
 
     final brandKitRes = await _withRetry<Map<String, dynamic>?>(
@@ -322,7 +270,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
 
     String brandKitId;
-
     if (brandKitRes == null) {
       final insertRes = await _withRetry<Map<String, dynamic>?>(
         () => supabase
@@ -333,17 +280,11 @@ class _ProfilePageState extends State<ProfilePage> {
             .maybeSingle()
             .timeout(const Duration(seconds: 12)),
       );
-
       if (insertRes == null) {
-        if (mounted) {
-          mySnackBar(
-            context,
-            'Failed to create Brand Kit. Please contact support!',
-          );
-        }
+        mySnackBar(
+            context, 'Failed to create Brand Kit. Please contact support!');
         return;
       }
-
       brandKitId = insertRes['id'];
     } else {
       brandKitId = brandKitRes['id'];
@@ -355,11 +296,8 @@ class _ProfilePageState extends State<ProfilePage> {
     await _withRetry<void>(
       () => storage
           .from('brand-kits')
-          .uploadBinary(
-            uploadKey,
-            file.bytes!,
-            fileOptions: const FileOptions(upsert: true),
-          )
+          .uploadBinary(uploadKey, file.bytes!,
+              fileOptions: const FileOptions(upsert: true))
           .timeout(const Duration(seconds: 20)),
     );
 
@@ -386,7 +324,6 @@ class _ProfilePageState extends State<ProfilePage> {
       );
     }
 
-    // OPT: update local state & cache to avoid immediate re-fetch of signed URL
     setState(() {
       if (isBrandKit) {
         brandKit ??= {};
@@ -397,14 +334,10 @@ class _ProfilePageState extends State<ProfilePage> {
         profile!['brand_logo_path'] = uploadKey;
         isChangingLogo = false;
       }
-      _signedUrlCache.remove(uploadKey); // ensure fresh signed url next fetch
+      _signedUrlCache.remove(uploadKey);
     });
-    if (mounted) {
-      mySnackBar(
-        context,
-        '${isBrandKit ? 'Headshot Logo' : 'Brand Logo'} uploaded successfully!',
-      );
-    }
+    mySnackBar(context,
+        '${isBrandKit ? 'Headshot Logo' : 'Brand Logo'} uploaded successfully!');
   }
 
   Future<void> updateName() async {
@@ -413,38 +346,34 @@ class _ProfilePageState extends State<ProfilePage> {
       mySnackBar(context, 'Enter Brand Name');
       return;
     }
-
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser?.id;
-
     if (userId == null) {
       mySnackBar(context, 'User not authenticated');
       return;
     }
-
     try {
       await _withRetry(
         () => supabase
             .from('brand_profiles')
             .update({'brand_name': brandName}).eq('user_id', userId),
       );
-      if (mounted) {
-        context.read<ProfileNotifier>().notifyProfileUpdated();
-        setState(() {
-          isUpdatingName = false;
-          isEditingName = false;
-          brandNameFocusNode.unfocus();
-        });
-      }
+      if (!mounted) return;
+      context.read<ProfileNotifier>().notifyProfileUpdated();
+      setState(() {
+        isUpdatingName = false;
+        isEditingName = false;
+        brandNameFocusNode.unfocus();
+      });
+      mySnackBar(context, 'Brand Name Updated!');
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          isUpdatingName = false;
-          isEditingName = false;
-          brandNameFocusNode.unfocus();
-        });
-        mySnackBar(context, 'Error updating name: $e');
-      }
+      if (!mounted) return;
+      setState(() {
+        isUpdatingName = false;
+        isEditingName = false;
+        brandNameFocusNode.unfocus();
+      });
+      mySnackBar(context, 'Error updating name: $e');
     }
   }
 
@@ -458,7 +387,6 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> updateListField(String key, List? updatedList) async {
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser?.id;
-
     if (userId == null) return;
 
     await _withRetry(
@@ -477,11 +405,7 @@ class _ProfilePageState extends State<ProfilePage> {
           .maybeSingle(),
     );
 
-    if (mounted) {
-      setState(() {
-        brandKit = updatedKit;
-      });
-    }
+    if (mounted) setState(() => brandKit = updatedKit);
   }
 
   Future<void> toggleTag({
@@ -491,27 +415,16 @@ class _ProfilePageState extends State<ProfilePage> {
     required String key,
   }) async {
     final isRemoving = list.contains(tag);
-
-    setState(() {
-      if (isRemoving) {
-        list.remove(tag);
-      } else {
-        list.add(tag);
-      }
-    });
-
+    setState(() => isRemoving ? list.remove(tag) : list.add(tag));
     await updateListField(key, list);
   }
 
   Future<void> loadSignedBackgrounds() async {
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser?.id;
-
     if (userId == null) return;
 
     final paths = (brandKit?['backgrounds'] as List?)?.cast<String>() ?? [];
-
-    // OPT: request all signed URLs in parallel; collect valid ones
     final signed = await Future.wait(
       paths.map((p) async {
         try {
@@ -529,7 +442,6 @@ class _ProfilePageState extends State<ProfilePage> {
         signed.where((e) => e != null).cast<Map<String, String>>().toList();
     final validPaths = newBackgrounds.map((e) => e['path']!).toList();
 
-    // OPT: prune invalid paths once (server update) if any mismatch
     if (validPaths.length != paths.length) {
       final kitId = brandKit?['id'];
       if (kitId != null) {
@@ -541,19 +453,11 @@ class _ProfilePageState extends State<ProfilePage> {
         );
       }
     }
-
-    if (mounted) {
-      setState(() {
-        backgrounds = newBackgrounds;
-      });
-    }
+    if (mounted) setState(() => backgrounds = newBackgrounds);
   }
 
   Future<void> pickAndAddBackground(BuildContext context) async {
-    setState(() {
-      isAddingBackground = true;
-    });
-
+    setState(() => isAddingBackground = true);
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser?.id;
     final storage = supabase.storage;
@@ -570,9 +474,8 @@ class _ProfilePageState extends State<ProfilePage> {
         withData: true,
         allowMultiple: false,
       );
-
       if (result == null || result.files.first.bytes == null) {
-        if (context.mounted) mySnackBar(context, 'No file selected');
+        mySnackBar(context, 'No file selected');
         return;
       }
 
@@ -588,45 +491,33 @@ class _ProfilePageState extends State<ProfilePage> {
             .maybeSingle()
             .timeout(const Duration(seconds: 12)),
       );
-
       if (kitRes == null || kitRes['id'] == null) {
-        if (context.mounted)
-          mySnackBar(context, 'No Brand Kit found. Create one first');
+        mySnackBar(context, 'No Brand Kit found. Create one first');
         return;
       }
 
       final brandKitId = kitRes['id'];
       final folderPath = 'users/$userId/kits/$brandKitId/backgrounds';
-
       final existingPaths = (kitRes['backgrounds'] as List?) ?? [];
-
       final uploadKey = 'users/$userId/kits/$brandKitId/backgrounds/$fileName';
 
-      // FIX: use FileObject (correct type) from Supabase storage list
       final existingFiles = await _withRetry<List<FileObject>>(
-        // OPT: compile fix + retry
         () => storage
             .from('brand-kits')
             .list(path: folderPath)
             .timeout(const Duration(seconds: 12)),
       );
-      final alreadyExists = existingFiles.any(
-        (f) => f.name == fileName,
-      ); // FIX: f.name (non-null)
-
+      final alreadyExists = existingFiles.any((f) => f.name == fileName);
       if (alreadyExists) {
-        if (context.mounted) mySnackBar(context, 'File already added!');
+        mySnackBar(context, 'File already added!');
         return;
       }
 
       await _withRetry<void>(
         () => storage
             .from('brand-kits')
-            .uploadBinary(
-              uploadKey,
-              file.bytes!,
-              fileOptions: const FileOptions(upsert: true),
-            )
+            .uploadBinary(uploadKey, file.bytes!,
+                fileOptions: const FileOptions(upsert: true))
             .timeout(const Duration(seconds: 20)),
       );
 
@@ -649,42 +540,31 @@ class _ProfilePageState extends State<ProfilePage> {
       );
 
       if (!mounted) return;
-      setState(() {
-        brandKit = updatedKit;
-      });
+      setState(() => brandKit = updatedKit);
 
       final newSignedUrls = await Future.wait(
         updatedPaths.map((p) async => (await getSignedImageUrl(p)) ?? ''),
       );
-
       if (mounted) {
-        setState(() {
-          signedBackgroundUrls =
-              newSignedUrls.where((url) => url.isNotEmpty).toList();
-        });
+        setState(() => signedBackgroundUrls =
+            newSignedUrls.where((u) => u.isNotEmpty).toList());
       }
 
       await loadSignedBackgrounds();
       await refreshSignedBackgrounds(updatedPaths);
-      if (context.mounted) mySnackBar(context, 'Background added!');
+      mySnackBar(context, 'Background added!');
     } catch (e) {
-      print('error: ${e.toString()}');
-      if (context.mounted) {
-        mySnackBar(context, 'Failed to upload background: ${e.toString()}');
-      }
+      mySnackBar(context, 'Failed to upload background: $e');
     } finally {
       if (mounted) setState(() => isAddingBackground = false);
     }
   }
 
   Future<void> removeBackground(
-    BuildContext context,
-    String pathToDelete,
-  ) async {
+      BuildContext context, String pathToDelete) async {
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser?.id;
     final storage = supabase.storage;
-
     if (userId == null) {
       mySnackBar(context, 'User not logged in');
       return;
@@ -699,15 +579,13 @@ class _ProfilePageState extends State<ProfilePage> {
             .eq('user_id', userId)
             .maybeSingle(),
       );
-
       if (kitRes == null || kitRes['id'] == null) {
-        if (context.mounted) mySnackBar(context, 'Brand Kit not found');
+        mySnackBar(context, 'Brand Kit not found');
         return;
       }
 
       final brandKitId = kitRes['id'];
       final existingPaths = (kitRes['backgrounds'] as List?) ?? [];
-
       final updatedPaths =
           existingPaths.where((p) => p != pathToDelete).toList();
 
@@ -719,12 +597,9 @@ class _ProfilePageState extends State<ProfilePage> {
       );
 
       final cleanPath = Uri.decodeFull(pathToDelete.trim());
-
-      await _withRetry<void>(
-        () => storage
-            .from('brand-kits')
-            .remove([cleanPath]).timeout(const Duration(seconds: 12)),
-      );
+      await _withRetry<void>(() => storage
+          .from('brand-kits')
+          .remove([cleanPath]).timeout(const Duration(seconds: 12)));
 
       final updatedKit = await _withRetry<Map<String, dynamic>?>(
         () => supabase
@@ -734,52 +609,32 @@ class _ProfilePageState extends State<ProfilePage> {
             .eq('user_id', userId)
             .maybeSingle(),
       );
-
-      if (mounted) {
-        setState(() {
-          brandKit = updatedKit;
-        });
-      }
+      if (mounted) setState(() => brandKit = updatedKit);
 
       final newSignedUrls = await Future.wait(
         updatedPaths.map((p) async => (await getSignedImageUrl(p)) ?? ''),
       );
-
-      if (mounted) {
-        setState(() {
-          signedBackgroundUrls =
-              newSignedUrls.where((url) => url.isNotEmpty).toList();
-        });
-      }
+      if (mounted)
+        setState(() => signedBackgroundUrls =
+            newSignedUrls.where((u) => u.isNotEmpty).toList());
 
       await loadSignedBackgrounds();
       await refreshSignedBackgrounds(updatedPaths);
-      if (context.mounted)
-        mySnackBar(context, 'Background removed successfully!');
+      mySnackBar(context, 'Background removed successfully!');
     } on StorageException catch (se) {
-      if (se.statusCode == '404') {
-        return;
-      } else {
-        if (context.mounted) {
-          mySnackBar(context, 'Failed to remove background: ${se.message}');
-        }
+      if (se.statusCode != '404') {
+        mySnackBar(context, 'Failed to remove background: ${se.message}');
       }
     } catch (e) {
-      if (context.mounted) {
-        mySnackBar(context, 'Failed to remove background: ${e.toString()}');
-      }
+      mySnackBar(context, 'Failed to remove background: $e');
     }
   }
 
   Future<void> refreshSignedBackgrounds(List updatedPaths) async {
-    final urls = await Future.wait(
-      updatedPaths.map((p) => getSignedImageUrl(p)),
-    );
-    if (mounted) {
-      setState(() {
-        signedBackgroundUrls = urls.whereType<String>().toList();
-      });
-    }
+    final urls =
+        await Future.wait(updatedPaths.map((p) => getSignedImageUrl(p)));
+    if (mounted)
+      setState(() => signedBackgroundUrls = urls.whereType<String>().toList());
   }
 
   Widget skeletonBox({double? w, double? h, double r = 24, Widget? child}) {
@@ -797,1066 +652,704 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  // ------------------------------- UI -------------------------------
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
-        child: profile == null
-            ? LayoutBuilder(
-                builder: (context, c) {
-                  final w = c.maxWidth;
-                  return SingleChildScrollView(
-                    padding: EdgeInsets.all(w * 0.0125),
+    return LayoutBuilder(
+      builder: (context, c) {
+        final w = c.maxWidth;
+        final isDesktop = w >= kDesktopBreak;
+        final hPad = isDesktop ? 24.0 : 12.0;
+        final vPad = isDesktop ? 24.0 : 12.0;
+        final sectionGap = isDesktop ? 24.0 : 16.0;
+        final nameFont = isDesktop ? 28.0 : 20.0;
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFF7F9FC),
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: profile == null
+                ? SingleChildScrollView(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
                     child: Column(
                       children: [
-                        // avatar skeleton
-                        skeletonBox(w: w * 0.10, h: w * 0.10, r: w * 0.05),
-                        const SizedBox(height: 36),
-                        // name line
-                        skeletonBox(w: w * 0.30, h: w * 0.025),
-                        const SizedBox(height: 48),
-                        // three profile rows
+                        skeletonBox(
+                            w: isDesktop ? w * 0.12 : 100,
+                            h: isDesktop ? w * 0.12 : 100,
+                            r: 100),
+                        SizedBox(height: sectionGap * 1.5),
+                        skeletonBox(w: isDesktop ? w * 0.30 : w * 0.6, h: 22),
+                        SizedBox(height: sectionGap * 2),
                         skeletonBox(w: w, h: 120),
-                        const SizedBox(height: 24),
+                        SizedBox(height: sectionGap),
                         skeletonBox(w: w, h: 120),
-                        const SizedBox(height: 24),
+                        SizedBox(height: sectionGap),
                         skeletonBox(w: w, h: 100),
-                        const SizedBox(height: 24),
-                        // backgrounds block
+                        SizedBox(height: sectionGap),
                         skeletonBox(w: w, h: 205, r: 16),
-                        const SizedBox(height: 24),
-                        // connected accounts blocks
+                        SizedBox(height: sectionGap),
                         skeletonBox(w: w, h: 56, r: 100),
-                        const SizedBox(height: 12),
+                        SizedBox(height: sectionGap * 0.75),
                         skeletonBox(w: w, h: 56, r: 100),
                       ],
                     ),
-                  );
-                },
-              )
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  final width = constraints.maxWidth;
-                  final String persona = profile!['persona'];
-                  final String category = profile!['category'];
-                  final String subcategory = profile!['subcategory'];
-                  final String brand_name = profile!['brand_name'];
-                  brandNameController.text = brand_name;
-                  final String? brand_logo_path = profile!['brand_logo_path'];
-                  final String primary_goal = profile!['primary_goal'];
-                  final String primary_color = profile!['primary_color'];
-                  final List voice_tags = profile!['voice_tags'];
-                  final List content_types = profile!['content_types'];
-                  final int target_posts_per_week =
-                      profile!['target_posts_per_week'];
-                  final String timezone = profile!['timezone'];
-
-                  final String? brand_kit_transparent_logo_path =
-                      brandKit?['transparent_logo_path'];
-
-                  return SingleChildScrollView(
-                    padding: EdgeInsets.all(width * 0.0125),
+                  )
+                : SingleChildScrollView(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Tooltip(
-                              message: 'Logo',
-                              child: FutureBuilder(
-                                key: ValueKey(brand_logo_path),
-                                future: getSignedImageUrl(brand_logo_path),
-                                builder: (context, snapshot) {
-                                  if (snapshot.hasError) {
-                                    return Semantics(
-                                      label: 'Error while fetching logo',
-                                      child: CircleAvatarEdit(
-                                        width: width,
-                                        icon: Icons.error_outline_rounded,
-                                        onTap: () async {
-                                          await pickLogo(false);
-                                        },
-                                      ),
-                                    );
-                                  }
-
-                                  if (snapshot.hasData) {
-                                    final imageUrl = snapshot.data;
-                                    return Semantics(
-                                      label: 'Logo. Tap to upload new logo',
-                                      child: CircleAvatarEdit(
-                                        width: width,
-                                        imageUrl: imageUrl,
-                                        onTap: () async {
-                                          await pickLogo(false);
-                                        },
-                                      ),
-                                    );
-                                  }
-
-                                  return CircleAvatarEdit(
-                                    width: width,
-                                    onTap: () async {
-                                      await pickLogo(false);
-                                    },
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 36),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                isUpdatingName
-                                    ? skeletonBox(
-                                        w: width * 0.30,
-                                        h: width * 0.025,
-                                      )
-                                    : IntrinsicWidth(
-                                        child: EditableText(
-                                          textAlign: TextAlign.end,
-                                          onSubmitted: (value) async {
-                                            setState(() {
-                                              isUpdatingName = true;
-                                              isEditingName = false;
-                                            });
-                                            await updateName();
-                                          },
-                                          onTapOutside: (value) async {
-                                            setState(() {
-                                              isUpdatingName = true;
-                                              isEditingName = false;
-                                            });
-                                            await updateName();
-                                            if (context.mounted) {
-                                              mySnackBar(
-                                                context,
-                                                'Brand Name Updated!',
-                                              );
-                                            }
-                                          },
-                                          onEditingComplete: () {
-                                            setState(() {
-                                              isUpdatingName = true;
-                                              isEditingName = false;
-                                            });
-                                            updateName();
-                                          },
-                                          controller: brandNameController,
-                                          readOnly: !isEditingName,
-                                          autocorrect: false,
-                                          focusNode: brandNameFocusNode,
-                                          style: TextStyle(
-                                            color: darkColor,
-                                            fontSize: width * 0.025,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                          cursorColor: darkColor,
-                                          backgroundCursorColor: lightColor,
-                                        ),
-                                      ),
-                                isUpdatingName
-                                    ? const SizedBox.shrink()
-                                    : IconButton(
-                                        onPressed: () {
-                                          brandNameFocusNode.unfocus();
-                                          if (!isEditingName) {
-                                            setState(() {
-                                              isEditingName = true;
-                                            });
-                                          }
-                                        },
-                                        icon: Icon(
-                                          isEditingName
-                                              ? Icons.check_rounded
-                                              : Icons.edit_outlined,
-                                          color: darkColor.withOpacity(0.25),
-                                        ),
-                                        iconSize: width * 0.01,
-                                        splashColor: Colors.transparent,
-                                        splashRadius: width * 0.01,
-                                        color: darkColor,
-                                        tooltip: 'Edit',
-                                      ),
-                              ],
-                            ),
-                            const SizedBox(height: 48),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                ProfileBox(
-                                  width: width,
-                                  label: 'Persona',
-                                  value: persona,
-                                  editPath: '/onboarding/persona',
-                                ),
-                                ProfileBox(
-                                  width: width,
-                                  label: 'Category',
-                                  value: category,
-                                ),
-                                ProfileBox(
-                                  width: width,
-                                  label: 'Subcategory',
-                                  value: subcategory,
-                                  editPath: '/onboarding/subcategory',
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                ProfileBox(
-                                  width: width,
-                                  label: 'Primary Goal',
-                                  value: primary_goal,
-                                  editPath: '/onboarding/primary-goal',
-                                ),
-                                ProfileBox(
-                                  width: width,
-                                  label: 'Primary Color',
-                                  value: primary_color,
-                                  editPath: '/onboarding/primary-color',
-                                ),
-                                ProfileBox(
-                                  width: width,
-                                  label: 'Target Posts Per Week',
-                                  value: target_posts_per_week.toString(),
-                                  editPath: '/onboarding/target-posts-per-week',
-                                ),
-                                ProfileBox(
-                                  width: width,
-                                  label: 'Timezone',
-                                  value: timezone,
-                                  editPath: '/onboarding/timezone',
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                ProfileBox(
-                                  width: width,
-                                  label: 'Voice Tags',
-                                  items: voice_tags,
-                                  editPath: '/onboarding/voice-tags',
-                                ),
-                                ProfileBox(
-                                  width: width,
-                                  label: 'Content Types',
-                                  items: content_types,
-                                  editPath: '/onboarding/content-types',
-                                ),
-                              ],
-                            ),
-                          ],
+                        // -------- Avatar / Brand name --------
+                        Tooltip(
+                          message: 'Logo',
+                          child: FutureBuilder(
+                            key: ValueKey(profile!['brand_logo_path']),
+                            future:
+                                getSignedImageUrl(profile!['brand_logo_path']),
+                            builder: (context, snap) {
+                              if (snap.hasError) {
+                                return CircleAvatarEdit(
+                                  width: w,
+                                  icon: Icons.error_outline_rounded,
+                                  onTap: () async => pickLogo(false),
+                                );
+                              }
+                              if (snap.hasData) {
+                                return CircleAvatarEdit(
+                                  width: w,
+                                  imageUrl: snap.data,
+                                  onTap: () async => pickLogo(false),
+                                );
+                              }
+                              return CircleAvatarEdit(
+                                  width: w, onTap: () async => pickLogo(false));
+                            },
+                          ),
                         ),
-                        brandKit == null
-                            ? MyButton(
-                                width: width,
-                                text: 'Create your Brand Kit',
-                                onTap: () async {
-                                  await createBrandKit();
-                                },
-                                isLoading: isCreatingBrandKit,
-                              )
-                            : Column(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceAround,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
-                                    ),
-                                    child: Tooltip(
-                                      message: 'Headshot Image',
-                                      child: FutureBuilder(
-                                        key: ValueKey(
-                                          brand_kit_transparent_logo_path,
-                                        ),
-                                        future: getSignedImageUrl(
-                                          brand_kit_transparent_logo_path,
-                                        ),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.hasError) {
-                                            return Semantics(
-                                              label:
-                                                  'Error while fetching headshot',
-                                              child: CircleAvatarEdit(
-                                                width: width,
-                                                icon:
-                                                    Icons.error_outline_rounded,
-                                                onTap: () async {
-                                                  await pickLogo(true);
-                                                },
-                                              ),
-                                            );
-                                          }
-
-                                          if (snapshot.hasData) {
-                                            final imageUrl = snapshot.data!;
-                                            return Semantics(
-                                              label: 'Headshot Image',
-                                              child: CircleAvatarEdit(
-                                                width: width,
-                                                imageUrl: imageUrl,
-                                                onTap: () async {
-                                                  await pickLogo(true);
-                                                },
-                                              ),
-                                            );
-                                          }
-
-                                          if (!snapshot.hasData) {
-                                            return CircleAvatarEdit(
-                                              width: width,
-                                              icon: Icons.camera_alt,
-                                              onTap: () async {
-                                                await pickLogo(true);
-                                              },
-                                            );
-                                          }
-
-                                          return skeletonBox(
-                                            w: width * 0.10,
-                                            h: width * 0.10,
-                                            r: 1000,
-                                          );
-                                        },
+                        SizedBox(height: sectionGap * 1.5),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            isUpdatingName
+                                ? skeletonBox(
+                                    w: isDesktop ? w * 0.30 : w * 0.6, h: 22)
+                                : IntrinsicWidth(
+                                    child: EditableText(
+                                      textAlign: TextAlign.center,
+                                      controller: brandNameController
+                                        ..text = (profile!['brand_name'] ?? '')
+                                            .toString(),
+                                      readOnly: !isEditingName,
+                                      autocorrect: false,
+                                      focusNode: brandNameFocusNode,
+                                      style: TextStyle(
+                                        color: darkColor,
+                                        fontSize: nameFont,
+                                        fontWeight: FontWeight.w700,
                                       ),
+                                      cursorColor: darkColor,
+                                      backgroundCursorColor: lightColor,
+                                      onSubmitted: (_) async {
+                                        setState(() {
+                                          isUpdatingName = true;
+                                          isEditingName = false;
+                                        });
+                                        await updateName();
+                                      },
+                                      onTapOutside: (_) async {
+                                        if (!isEditingName) return;
+                                        setState(() {
+                                          isUpdatingName = true;
+                                          isEditingName = false;
+                                        });
+                                        await updateName();
+                                      },
                                     ),
                                   ),
-                                  Container(
-                                    alignment: Alignment.center,
-                                    decoration: BoxDecoration(
-                                      color: lightColor.withOpacity(
-                                        0.125,
-                                      ), // --light-accent
-                                      border: Border.all(
-                                        width: 1,
-                                        color: lightColor.withOpacity(0.25),
-                                      ),
-                                      borderRadius: BorderRadius.circular(
-                                        16,
-                                      ), // --radius-btn
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                      horizontal: 16,
-                                    ),
-                                    margin: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          'Colors',
-                                          style: TextStyle(
+                            if (!isUpdatingName) ...[
+                              SizedBox(width: 8),
+                              IconButton(
+                                onPressed: () {
+                                  brandNameFocusNode.unfocus();
+                                  if (!isEditingName) {
+                                    setState(() => isEditingName = true);
+                                    brandNameFocusNode.requestFocus();
+                                  } else {
+                                    setState(() {
+                                      isUpdatingName = true;
+                                      isEditingName = false;
+                                    });
+                                    updateName();
+                                  }
+                                },
+                                icon: Icon(
+                                    isEditingName
+                                        ? Icons.check_rounded
+                                        : Icons.edit_outlined,
+                                    color: darkColor.withOpacity(0.35)),
+                                splashRadius: 20,
+                                tooltip: isEditingName ? 'Save' : 'Edit',
+                              ),
+                            ],
+                          ],
+                        ),
+                        SizedBox(height: sectionGap * 2),
+
+                        // -------- Profile facts (responsive) --------
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            ProfileBox(
+                                width: w,
+                                label: 'Persona',
+                                value: profile!['persona'],
+                                editPath: '/onboarding/persona'),
+                            ProfileBox(
+                                width: w,
+                                label: 'Category',
+                                value: profile!['category']),
+                            ProfileBox(
+                                width: w,
+                                label: 'Subcategory',
+                                value: profile!['subcategory'],
+                                editPath: '/onboarding/subcategory'),
+                            ProfileBox(
+                                width: w,
+                                label: 'Primary Goal',
+                                value: profile!['primary_goal'],
+                                editPath: '/onboarding/primary-goal'),
+                            ProfileBox(
+                                width: w,
+                                label: 'Primary Color',
+                                value: profile!['primary_color'],
+                                editPath: '/onboarding/primary-color'),
+                            ProfileBox(
+                                width: w,
+                                label: 'Target Posts Per Week',
+                                value: (profile!['target_posts_per_week'])
+                                    .toString(),
+                                editPath: '/onboarding/target-posts-per-week'),
+                            ProfileBox(
+                                width: w,
+                                label: 'Timezone',
+                                value: profile!['timezone'],
+                                editPath: '/onboarding/timezone'),
+                            ProfileBox(
+                                width: w,
+                                label: 'Voice Tags',
+                                items: profile!['voice_tags'],
+                                editPath: '/onboarding/voice-tags'),
+                            ProfileBox(
+                                width: w,
+                                label: 'Content Types',
+                                items: profile!['content_types'],
+                                editPath: '/onboarding/content-types'),
+                          ],
+                        ),
+
+                        SizedBox(height: sectionGap),
+
+                        // -------- Brand Kit --------
+                        if (brandKit == null)
+                          MyButton(
+                            width: isDesktop ? (w * 0.4) : w,
+                            text: 'Create your Brand Kit',
+                            onTap: () async => createBrandKit(),
+                            isLoading: isCreatingBrandKit,
+                          )
+                        else
+                          Column(
+                            children: [
+                              SizedBox(height: sectionGap),
+                              Tooltip(
+                                message: 'Headshot Image',
+                                child: FutureBuilder(
+                                  key: ValueKey(
+                                      brandKit!['transparent_logo_path']),
+                                  future: getSignedImageUrl(
+                                      brandKit!['transparent_logo_path']),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasError) {
+                                      return CircleAvatarEdit(
+                                        width: w,
+                                        icon: Icons.error_outline_rounded,
+                                        onTap: () async => pickLogo(true),
+                                      );
+                                    }
+                                    if (snapshot.hasData) {
+                                      return CircleAvatarEdit(
+                                        width: w,
+                                        imageUrl: snapshot.data!,
+                                        onTap: () async => pickLogo(true),
+                                      );
+                                    }
+                                    return CircleAvatarEdit(
+                                      width: w,
+                                      icon: Icons.camera_alt,
+                                      onTap: () async => pickLogo(true),
+                                    );
+                                  },
+                                ),
+                              ),
+                              SizedBox(height: sectionGap),
+
+                              // Colors row
+                              Container(
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: lightColor.withOpacity(0.125),
+                                  border: Border.all(
+                                      width: 1,
+                                      color: lightColor.withOpacity(0.25)),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 12, horizontal: 16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Colors',
+                                        style: TextStyle(
                                             color: darkColor,
-                                            fontSize: width * 0.0125,
-                                            fontWeight: FontWeight.w500,
-                                          ),
+                                            fontSize: isDesktop ? 18 : 16,
+                                            fontWeight: FontWeight.w600)),
+                                    const SizedBox(height: 12),
+                                    Wrap(
+                                      spacing: 12,
+                                      runSpacing: 12,
+                                      children: [
+                                        ColorDot(
+                                          color: brandKit!['colors']
+                                              ?['primary'],
+                                          label: 'Primary',
+                                          onTap: () async {
+                                            await pickColor(
+                                              context: context,
+                                              initialColor: Color(int.parse(
+                                                  (brandKit!['colors']
+                                                              ?['primary'] ??
+                                                          '#004AAD')
+                                                      .replaceFirst(
+                                                          '#', '0xFF'))),
+                                              onColorSelected:
+                                                  (selectedColor) async {
+                                                final hex =
+                                                    '#${selectedColor.value.toRadixString(16).substring(2)}';
+                                                await Supabase.instance.client
+                                                    .schema('brand_kit')
+                                                    .from('brand_kits')
+                                                    .update({
+                                                  'colors': {
+                                                    ...?brandKit!['colors'],
+                                                    'primary': hex
+                                                  }
+                                                }).eq('id', brandKit!['id']);
+                                                if (!mounted) return;
+                                                setState(() =>
+                                                    brandKit!['colors']
+                                                        ['primary'] = hex);
+                                                mySnackBar(context,
+                                                    'PRIMARY Color Updated!');
+                                              },
+                                            );
+                                          },
                                         ),
-                                        Row(
-                                          children: [
-                                            ColorDot(
-                                              color: brandKit!['colors']
-                                                  ?['primary'],
-                                              label: 'Primary',
-                                              onTap: () async {
-                                                await pickColor(
-                                                  context: context,
-                                                  initialColor: Color(
-                                                    int.parse(
-                                                      brandKit!['colors']
-                                                              ?['primary']
-                                                          .replaceFirst(
-                                                        '#',
-                                                        '0xFF',
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  onColorSelected:
-                                                      (selectedColor) async {
-                                                    final hex =
-                                                        '#${selectedColor.value.toRadixString(16).substring(2)}';
-                                                    await Supabase
-                                                        .instance.client
-                                                        .schema('brand_kit')
-                                                        .from('brand_kits')
-                                                        .update({
-                                                      'colors': {
-                                                        ...?brandKit!['colors'],
-                                                        'primary': hex,
-                                                      },
-                                                    }).eq(
-                                                      'id',
-                                                      brandKit!['id'],
-                                                    );
-                                                    if (context.mounted) {
-                                                      mySnackBar(
-                                                        context,
-                                                        'PRIMARY Color Updated!',
-                                                      );
-                                                    }
-                                                    setState(() {
-                                                      brandKit!['colors']
-                                                          ['primary'] = hex;
-                                                    });
-                                                  },
-                                                );
+                                        ColorDot(
+                                          color: brandKit!['colors']
+                                              ?['secondary'],
+                                          label: 'Secondary',
+                                          onTap: () async {
+                                            await pickColor(
+                                              context: context,
+                                              initialColor: Color(int.parse(
+                                                  (brandKit!['colors']
+                                                              ?['secondary'] ??
+                                                          '#BDE2FF')
+                                                      .replaceFirst(
+                                                          '#', '0xFF'))),
+                                              onColorSelected:
+                                                  (selectedColor) async {
+                                                final hex =
+                                                    '#${selectedColor.value.toRadixString(16).substring(2)}';
+                                                await Supabase.instance.client
+                                                    .schema('brand_kit')
+                                                    .from('brand_kits')
+                                                    .update({
+                                                  'colors': {
+                                                    ...?brandKit!['colors'],
+                                                    'secondary': hex
+                                                  }
+                                                }).eq('id', brandKit!['id']);
+                                                if (!mounted) return;
+                                                setState(() =>
+                                                    brandKit!['colors']
+                                                        ['secondary'] = hex);
+                                                mySnackBar(context,
+                                                    'SECONDARY Color Updated!');
                                               },
-                                            ),
-                                            const SizedBox(width: 12),
-                                            ColorDot(
-                                              color: brandKit!['colors']
-                                                  ?['secondary'],
-                                              label: 'Secondary',
-                                              onTap: () async {
-                                                await pickColor(
-                                                  context: context,
-                                                  initialColor: Color(
-                                                    int.parse(
-                                                      brandKit!['colors']
-                                                              ?['secondary']
-                                                          .replaceFirst(
-                                                        '#',
-                                                        '0xFF',
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  onColorSelected:
-                                                      (selectedColor) async {
-                                                    final hex =
-                                                        '#${selectedColor.value.toRadixString(16).substring(2)}';
-                                                    await Supabase
-                                                        .instance.client
-                                                        .schema('brand_kit')
-                                                        .from('brand_kits')
-                                                        .update({
-                                                      'colors': {
-                                                        ...?brandKit!['colors'],
-                                                        'secondary': hex,
-                                                      },
-                                                    }).eq(
-                                                      'id',
-                                                      brandKit!['id'],
-                                                    );
-                                                    if (context.mounted) {
-                                                      mySnackBar(
-                                                        context,
-                                                        'SECONDARY Color Updated!',
-                                                      );
-                                                    }
-                                                    setState(() {
-                                                      brandKit!['colors']
-                                                          ['secondary'] = hex;
-                                                    });
-                                                  },
-                                                );
+                                            );
+                                          },
+                                        ),
+                                        ColorDot(
+                                          color: brandKit!['colors']?['accent'],
+                                          label: 'Accent',
+                                          onTap: () async {
+                                            await pickColor(
+                                              context: context,
+                                              initialColor: Color(int.parse(
+                                                  (brandKit!['colors']
+                                                              ?['accent'] ??
+                                                          '#111827')
+                                                      .replaceFirst(
+                                                          '#', '0xFF'))),
+                                              onColorSelected:
+                                                  (selectedColor) async {
+                                                final hex =
+                                                    '#${selectedColor.value.toRadixString(16).substring(2)}';
+                                                await Supabase.instance.client
+                                                    .schema('brand_kit')
+                                                    .from('brand_kits')
+                                                    .update({
+                                                  'colors': {
+                                                    ...?brandKit!['colors'],
+                                                    'accent': hex
+                                                  }
+                                                }).eq('id', brandKit!['id']);
+                                                if (!mounted) return;
+                                                setState(() =>
+                                                    brandKit!['colors']
+                                                        ['accent'] = hex);
+                                                mySnackBar(context,
+                                                    'ACCENT Color Updated!');
                                               },
-                                            ),
-                                            const SizedBox(width: 12),
-                                            ColorDot(
-                                              color: brandKit!['colors']
-                                                  ?['accent'],
-                                              label: 'Accent',
-                                              onTap: () async {
-                                                await pickColor(
-                                                  context: context,
-                                                  initialColor: Color(
-                                                    int.parse(
-                                                      brandKit!['colors']
-                                                              ?['accent']
-                                                          .replaceFirst(
-                                                        '#',
-                                                        '0xFF',
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  onColorSelected:
-                                                      (selectedColor) async {
-                                                    final hex =
-                                                        '#${selectedColor.value.toRadixString(16).substring(2)}';
-                                                    await Supabase
-                                                        .instance.client
-                                                        .schema('brand_kit')
-                                                        .from('brand_kits')
-                                                        .update({
-                                                      'colors': {
-                                                        ...?brandKit!['colors'],
-                                                        'accent': hex,
-                                                      },
-                                                    }).eq(
-                                                      'id',
-                                                      brandKit!['id'],
-                                                    );
-                                                    if (context.mounted) {
-                                                      mySnackBar(
-                                                        context,
-                                                        'ACCENT Color Updated!',
-                                                      );
-                                                    }
-                                                    setState(() {
-                                                      brandKit!['colors']
-                                                          ['accent'] = hex;
-                                                    });
-                                                  },
-                                                );
+                                            );
+                                          },
+                                        ),
+                                        ColorDot(
+                                          color: brandKit!['colors']
+                                              ?['background'],
+                                          label: 'Background',
+                                          onTap: () async {
+                                            await pickColor(
+                                              context: context,
+                                              initialColor: Color(int.parse(
+                                                  (brandKit!['colors']
+                                                              ?['background'] ??
+                                                          '#F7F9FC')
+                                                      .replaceFirst(
+                                                          '#', '0xFF'))),
+                                              onColorSelected:
+                                                  (selectedColor) async {
+                                                final hex =
+                                                    '#${selectedColor.value.toRadixString(16).substring(2)}';
+                                                await Supabase.instance.client
+                                                    .schema('brand_kit')
+                                                    .from('brand_kits')
+                                                    .update({
+                                                  'colors': {
+                                                    ...?brandKit!['colors'],
+                                                    'background': hex
+                                                  }
+                                                }).eq('id', brandKit!['id']);
+                                                if (!mounted) return;
+                                                setState(() =>
+                                                    brandKit!['colors']
+                                                        ['background'] = hex);
+                                                mySnackBar(context,
+                                                    'BACKGROUND Color Updated!');
                                               },
-                                            ),
-                                            const SizedBox(width: 12),
-                                            ColorDot(
-                                              color: brandKit!['colors']
-                                                  ?['background'],
-                                              label: 'Background',
-                                              onTap: () async {
-                                                await pickColor(
-                                                  context: context,
-                                                  initialColor: Color(
-                                                    int.parse(
-                                                      brandKit!['colors']
-                                                              ?['background']
-                                                          .replaceFirst(
-                                                        '#',
-                                                        '0xFF',
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  onColorSelected:
-                                                      (selectedColor) async {
-                                                    final hex =
-                                                        '#${selectedColor.value.toRadixString(16).substring(2)}';
-                                                    await Supabase
-                                                        .instance.client
-                                                        .schema('brand_kit')
-                                                        .from('brand_kits')
-                                                        .update({
-                                                      'colors': {
-                                                        ...?brandKit!['colors'],
-                                                        'background': hex,
-                                                      },
-                                                    }).eq(
-                                                      'id',
-                                                      brandKit!['id'],
-                                                    );
-                                                    if (context.mounted) {
-                                                      mySnackBar(
-                                                        context,
-                                                        'BACKGROUND Color Updated!',
-                                                      );
-                                                    }
-                                                    setState(() {
-                                                      brandKit!['colors']
-                                                          ['background'] = hex;
-                                                    });
-                                                  },
-                                                );
-                                              },
-                                            ),
-                                          ],
+                                            );
+                                          },
                                         ),
                                       ],
                                     ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    height: 205,
-                                    alignment: Alignment.center,
-                                    decoration: BoxDecoration(
-                                      color: lightColor.withOpacity(0.125),
-                                      border: Border.all(
-                                        width: 1,
-                                        color: lightColor.withOpacity(0.25),
-                                      ),
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                      horizontal: 16,
-                                    ),
-                                    margin: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    child: backgrounds == null
-                                        ? skeletonBox(
-                                            w: double.infinity,
-                                            h: 100,
-                                            r: 16,
-                                          )
-                                        : Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.center,
-                                            children: [
-                                              Column(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment
-                                                        .spaceAround,
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                mainAxisSize: MainAxisSize.max,
-                                                children: [
-                                                  Text(
-                                                    'Backgrounds',
-                                                    style: TextStyle(
-                                                      color: darkColor,
-                                                      fontSize: width * 0.0125,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                    ),
-                                                  ),
-                                                  backgrounds!.isEmpty
-                                                      ? const Text(
-                                                          'No Backgrounds added',
-                                                        )
-                                                      : SizedBox(
-                                                          width: width * 0.75,
-                                                          height: 100,
-                                                          child: Scrollbar(
-                                                            controller:
-                                                                backgroundScrollController,
-                                                            thumbVisibility:
-                                                                backgrounds!
-                                                                        .length >
-                                                                    6,
-                                                            child: ListView
-                                                                .builder(
-                                                              controller:
-                                                                  backgroundScrollController,
-                                                              physics:
-                                                                  const ClampingScrollPhysics(),
-                                                              scrollDirection:
-                                                                  Axis.horizontal,
-                                                              itemCount:
-                                                                  backgrounds!
-                                                                      .length,
-                                                              itemBuilder:
-                                                                  (context,
-                                                                      index) {
-                                                                final bg =
-                                                                    backgrounds![
-                                                                        index];
-                                                                final url =
-                                                                    bg['url']!;
-                                                                final pathToDelete =
-                                                                    bg['path']!;
+                                  ],
+                                ),
+                              ),
 
-                                                                return SizedBox(
-                                                                  width: width *
-                                                                      0.125,
-                                                                  child:
-                                                                      AspectRatio(
-                                                                    aspectRatio:
-                                                                        1,
-                                                                    child:
-                                                                        Stack(
-                                                                      children: [
-                                                                        Container(
-                                                                          decoration:
-                                                                              BoxDecoration(
-                                                                            border:
-                                                                                Border.all(
-                                                                              width: 0.5,
-                                                                              color: darkColor.withOpacity(
-                                                                                0.5,
-                                                                              ),
-                                                                            ),
-                                                                            borderRadius:
-                                                                                BorderRadius.circular(
-                                                                              16,
-                                                                            ),
-                                                                          ),
-                                                                          margin:
-                                                                              EdgeInsets.all(
-                                                                            width *
-                                                                                0.00125,
-                                                                          ),
-                                                                          child:
-                                                                              ClipRRect(
-                                                                            borderRadius:
-                                                                                BorderRadius.circular(
-                                                                              16,
-                                                                            ),
-                                                                            child:
-                                                                                Image.network(
-                                                                              url,
-                                                                              fit: BoxFit.cover,
-                                                                              width: double.infinity,
-                                                                              height: double.infinity,
-                                                                              loadingBuilder: (
-                                                                                context,
-                                                                                child,
-                                                                                progress,
-                                                                              ) {
-                                                                                if (progress == null) return child;
-                                                                                return Shimmer.fromColors(
-                                                                                  baseColor: lightColor.withOpacity(
-                                                                                    0.1,
-                                                                                  ),
-                                                                                  highlightColor: lightColor.withOpacity(
-                                                                                    0.25,
-                                                                                  ),
-                                                                                  child: Container(
-                                                                                    decoration: BoxDecoration(
-                                                                                      borderRadius: BorderRadius.circular(
-                                                                                        16,
-                                                                                      ),
-                                                                                      color: lightColor,
-                                                                                    ),
-                                                                                  ),
-                                                                                );
-                                                                              },
-                                                                              errorBuilder: (
-                                                                                context,
-                                                                                error,
-                                                                                stackTrace,
-                                                                              ) =>
-                                                                                  const Center(
-                                                                                child: Icon(
-                                                                                  Icons.broken_image,
-                                                                                ),
-                                                                              ),
-                                                                            ),
-                                                                          ),
-                                                                        ),
-                                                                        Positioned(
-                                                                          top:
-                                                                              4,
-                                                                          right:
-                                                                              4,
-                                                                          child:
-                                                                              Tooltip(
-                                                                            message:
-                                                                                'Remove',
-                                                                            child:
-                                                                                InkWell(
-                                                                              onTap: () async {
-                                                                                await removeBackground(
-                                                                                  context,
-                                                                                  pathToDelete,
-                                                                                );
-                                                                              },
-                                                                              borderRadius: BorderRadius.circular(
-                                                                                20,
-                                                                              ),
-                                                                              child: Container(
-                                                                                padding: const EdgeInsets.all(
-                                                                                  4,
-                                                                                ),
-                                                                                decoration: BoxDecoration(
-                                                                                  color: darkColor,
-                                                                                  shape: BoxShape.circle,
-                                                                                ),
-                                                                                child: const Icon(
-                                                                                  Icons.close,
-                                                                                  size: 16,
-                                                                                  color: Colors.white,
-                                                                                ),
-                                                                              ),
-                                                                            ),
-                                                                          ),
-                                                                        ),
-                                                                      ],
-                                                                    ),
-                                                                  ),
-                                                                );
-                                                              },
-                                                            ),
-                                                          ),
-                                                        ),
-                                                ],
-                                              ),
-                                              Tooltip(
-                                                message: 'Add Background',
-                                                mouseCursor:
-                                                    SystemMouseCursors.click,
-                                                child: GestureDetector(
-                                                  onTap: () async {
-                                                    if (!isAddingBackground) {
-                                                      await pickAndAddBackground(
-                                                        context,
-                                                      );
-                                                    }
-                                                  },
-                                                  child: Container(
-                                                    width: width * 0.06125,
-                                                    height: width * 0.06125,
+                              SizedBox(height: sectionGap),
+
+                              // Backgrounds picker
+                              Container(
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: lightColor.withOpacity(0.125),
+                                  border: Border.all(
+                                      width: 1,
+                                      color: lightColor.withOpacity(0.25)),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 12, horizontal: 16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Backgrounds',
+                                        style: TextStyle(
+                                            color: darkColor,
+                                            fontSize: isDesktop ? 18 : 16,
+                                            fontWeight: FontWeight.w600)),
+                                    const SizedBox(height: 12),
+                                    if (backgrounds == null)
+                                      skeletonBox(
+                                          w: double.infinity, h: 100, r: 16)
+                                    else if (backgrounds!.isEmpty)
+                                      const Text('No Backgrounds added')
+                                    else
+                                      SizedBox(
+                                        height: isDesktop ? 120 : 100,
+                                        child: ListView.separated(
+                                          controller:
+                                              backgroundScrollController,
+                                          scrollDirection: Axis.horizontal,
+                                          physics:
+                                              const ClampingScrollPhysics(),
+                                          itemCount: backgrounds!.length,
+                                          separatorBuilder: (_, __) =>
+                                              const SizedBox(width: 10),
+                                          itemBuilder: (context, index) {
+                                            final bg = backgrounds![index];
+                                            final url = bg['url']!;
+                                            final pathToDelete = bg['path']!;
+                                            return AspectRatio(
+                                              aspectRatio: 1,
+                                              child: Stack(
+                                                children: [
+                                                  Container(
                                                     decoration: BoxDecoration(
-                                                      color: lightColor
-                                                          .withOpacity(0.125),
                                                       border: Border.all(
-                                                        width: 2,
-                                                        color: darkColor
-                                                            .withOpacity(0.5),
-                                                      ),
+                                                          width: 0.5,
+                                                          color: darkColor
+                                                              .withOpacity(
+                                                                  0.5)),
                                                       borderRadius:
                                                           BorderRadius.circular(
-                                                        16,
+                                                              16),
+                                                    ),
+                                                    child: ClipRRect(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              16),
+                                                      child: Image.network(
+                                                        url,
+                                                        fit: BoxFit.cover,
+                                                        width: double.infinity,
+                                                        height: double.infinity,
+                                                        loadingBuilder:
+                                                            (context, child,
+                                                                progress) {
+                                                          if (progress == null)
+                                                            return child;
+                                                          return Shimmer
+                                                              .fromColors(
+                                                            baseColor: lightColor
+                                                                .withOpacity(
+                                                                    0.1),
+                                                            highlightColor:
+                                                                lightColor
+                                                                    .withOpacity(
+                                                                        0.25),
+                                                            child: Container(
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                borderRadius:
+                                                                    BorderRadius
+                                                                        .circular(
+                                                                            16),
+                                                                color:
+                                                                    lightColor,
+                                                              ),
+                                                            ),
+                                                          );
+                                                        },
+                                                        errorBuilder: (_, __,
+                                                                ___) =>
+                                                            const Center(
+                                                                child: Icon(Icons
+                                                                    .broken_image)),
                                                       ),
                                                     ),
-                                                    child: isAddingBackground
-                                                        ? skeletonBox()
-                                                        : Icon(
-                                                            Icons.add_rounded,
-                                                            color: darkColor,
-                                                            size: width * 0.05,
-                                                          ),
                                                   ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                  ),
-                                ],
-                              ),
-                        const SizedBox(height: 24),
-                        connectedPlatforms == null
-                            ? const SizedBox.shrink()
-                            : Column(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceAround,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Connected Accounts',
-                                    style: TextStyle(
-                                      color: darkColor,
-                                      fontSize: width * 0.0125,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  connectedPlatforms!.isEmpty
-                                      ? Padding(
-                                          padding: const EdgeInsets.only(
-                                            bottom: 12,
-                                          ),
-                                          child: Text(
-                                            'No Platforms Connected',
-                                            style: TextStyle(
-                                              color: darkColor.withOpacity(
-                                                0.75,
-                                              ),
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        )
-                                      : LayoutBuilder(
-                                          builder: (context, constraints) {
-                                            final count =
-                                                connectedPlatforms!.length;
-                                            final totalSpacing =
-                                                (count - 1) * 2;
-                                            final chipWidth =
-                                                (constraints.maxWidth -
-                                                        totalSpacing) /
-                                                    (count + 0.02);
-
-                                            return Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children:
-                                                  connectedPlatforms!.map((
-                                                item,
-                                              ) {
-                                                return MouseRegion(
-                                                  cursor:
-                                                      SystemMouseCursors.click,
-                                                  child: GestureDetector(
-                                                    onTap: () {
-                                                      context.push(
-                                                        '/platform/${item.toString().toLowerCase()}',
-                                                      );
-                                                    },
-                                                    child: Container(
-                                                      width: chipWidth,
-                                                      decoration: BoxDecoration(
-                                                        color: darkColor,
+                                                  Positioned(
+                                                    top: 4,
+                                                    right: 4,
+                                                    child: Tooltip(
+                                                      message: 'Remove',
+                                                      child: InkWell(
+                                                        onTap: () async =>
+                                                            removeBackground(
+                                                                context,
+                                                                pathToDelete),
                                                         borderRadius:
                                                             BorderRadius
-                                                                .circular(
-                                                          100,
-                                                        ),
-                                                        border: Border.all(
-                                                          color: darkColor,
-                                                          width: 0.5,
-                                                        ),
-                                                      ),
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 12,
-                                                      ),
-                                                      margin: const EdgeInsets
-                                                          .symmetric(
-                                                        horizontal: 2,
-                                                        vertical: 12,
-                                                      ),
-                                                      child: Center(
-                                                        child: FittedBox(
-                                                          fit: BoxFit.scaleDown,
-                                                          child: Text(
-                                                            item.toString().toLowerCase() ==
-                                                                    'linkedin'
-                                                                ? 'LinkedIn'
-                                                                : item.toString().toLowerCase() ==
-                                                                        'facebook'
-                                                                    ? 'Facebook'
-                                                                    : item.toString().toLowerCase() ==
-                                                                            'instagram'
-                                                                        ? 'Instagram'
-                                                                        : item.toString().toLowerCase() ==
-                                                                                'youtube'
-                                                                            ? 'YouTube'
-                                                                            : item.toString().toLowerCase() == 'twitter'
-                                                                                ? 'Twitter'
-                                                                                : 'Unknown Platform',
-                                                            style:
-                                                                const TextStyle(
+                                                                .circular(20),
+                                                        child: Container(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .all(4),
+                                                          decoration:
+                                                              BoxDecoration(
+                                                                  color:
+                                                                      darkColor,
+                                                                  shape: BoxShape
+                                                                      .circle),
+                                                          child: const Icon(
+                                                              Icons.close,
+                                                              size: 16,
                                                               color:
-                                                                  Colors.white,
-                                                              fontSize: 14,
-                                                            ),
-                                                          ),
+                                                                  Colors.white),
                                                         ),
                                                       ),
                                                     ),
                                                   ),
-                                                );
-                                              }).toList(),
+                                                ],
+                                              ),
                                             );
                                           },
                                         ),
-                                  if (canConnectPlatforms != null &&
-                                      canConnectPlatforms!.isNotEmpty) ...[
-                                    Text(
-                                      'Can Connect',
-                                      style: TextStyle(
-                                        color: darkColor,
-                                        fontSize: width * 0.0125,
-                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    const SizedBox(height: 12),
+                                    Align(
+                                      alignment: isDesktop
+                                          ? Alignment.centerRight
+                                          : Alignment.center,
+                                      child: GestureDetector(
+                                        onTap: () async {
+                                          if (!isAddingBackground)
+                                            await pickAndAddBackground(context);
+                                        },
+                                        child: Container(
+                                          width: isDesktop ? 64 : 56,
+                                          height: isDesktop ? 64 : 56,
+                                          decoration: BoxDecoration(
+                                            color:
+                                                lightColor.withOpacity(0.125),
+                                            border: Border.all(
+                                                width: 2,
+                                                color:
+                                                    darkColor.withOpacity(0.5)),
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                          ),
+                                          child: isAddingBackground
+                                              ? skeletonBox()
+                                              : Icon(Icons.add_rounded,
+                                                  color: darkColor,
+                                                  size: isDesktop ? 40 : 32),
+                                        ),
                                       ),
                                     ),
-                                    LayoutBuilder(
-                                      builder: (context, constraints) {
-                                        final count =
-                                            canConnectPlatforms!.length;
-                                        final totalSpacing = (count - 1) * 2;
-                                        final chipWidth =
-                                            (constraints.maxWidth -
-                                                    totalSpacing) /
-                                                (count + 0.02);
-
-                                        return Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: canConnectPlatforms!.map((
-                                            item,
-                                          ) {
-                                            return MouseRegion(
-                                              cursor: SystemMouseCursors.click,
-                                              child: GestureDetector(
-                                                onTap: () {
-                                                  if (item
-                                                          .toString()
-                                                          .toLowerCase() ==
-                                                      'linkedin') {
-                                                    context.push(
-                                                      '/connect/linkedin',
-                                                    );
-                                                  } else {
-                                                    context.push(
-                                                      '/connect/meta',
-                                                    );
-                                                  }
-                                                },
-                                                child: Container(
-                                                  width: chipWidth,
-                                                  decoration: BoxDecoration(
-                                                    color: darkColor,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                      100,
-                                                    ),
-                                                    border: Border.all(
-                                                      color: darkColor,
-                                                      width: 0.5,
-                                                    ),
-                                                  ),
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 12,
-                                                  ),
-                                                  margin: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 2,
-                                                    vertical: 12,
-                                                  ),
-                                                  child: Center(
-                                                    child: FittedBox(
-                                                      fit: BoxFit.scaleDown,
-                                                      child: Text(
-                                                        item
-                                                                    .toString()
-                                                                    .toLowerCase() ==
-                                                                'linkedin'
-                                                            ? 'LinkedIn'
-                                                            : item
-                                                                        .toString()
-                                                                        .toLowerCase() ==
-                                                                    'facebook'
-                                                                ? 'Facebook'
-                                                                : item.toString().toLowerCase() ==
-                                                                        'instagram'
-                                                                    ? 'Instagram'
-                                                                    : item.toString().toLowerCase() ==
-                                                                            'youtube'
-                                                                        ? 'YouTube'
-                                                                        : item.toString().toLowerCase() ==
-                                                                                'twitter'
-                                                                            ? 'Twitter'
-                                                                            : 'Unknown Platform',
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 14,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          }).toList(),
-                                        );
-                                      },
-                                    ),
                                   ],
-                                ],
+                                ),
                               ),
+                            ],
+                          ),
+
+                        SizedBox(height: sectionGap),
+
+                        // -------- Connected Accounts --------
+                        if (connectedPlatforms != null) ...[
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('Connected Accounts',
+                                style: TextStyle(
+                                    color: darkColor,
+                                    fontSize: isDesktop ? 18 : 16,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                          const SizedBox(height: 8),
+                          if (connectedPlatforms!.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                'No Platforms Connected',
+                                style: TextStyle(
+                                    color: darkColor.withOpacity(0.75),
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            )
+                          else
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              alignment: WrapAlignment.start,
+                              children: connectedPlatforms!.map((item) {
+                                final label = _platformLabel(item.toString());
+                                return GestureDetector(
+                                  onTap: () => context.push(
+                                      '/platform/${item.toString().toLowerCase()}'),
+                                  child: Chip(
+                                    label: Text(label,
+                                        style: const TextStyle(
+                                            color: Colors.white)),
+                                    backgroundColor: darkColor,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 4),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          if (canConnectPlatforms != null &&
+                              canConnectPlatforms!.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text('Can Connect',
+                                  style: TextStyle(
+                                      color: darkColor,
+                                      fontSize: isDesktop ? 18 : 16,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: canConnectPlatforms!.map((item) {
+                                final label = _platformLabel(item.toString());
+                                return GestureDetector(
+                                  onTap: () {
+                                    if (item.toString().toLowerCase() ==
+                                        'linkedin') {
+                                      context.push('/connect/linkedin');
+                                    } else {
+                                      context.push('/connect/meta');
+                                    }
+                                  },
+                                  child: Chip(
+                                    label: Text(label,
+                                        style: const TextStyle(
+                                            color: Colors.white)),
+                                    backgroundColor: darkColor,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 4),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ],
+                        SizedBox(height: sectionGap),
                       ],
                     ),
-                  );
-                },
-              ),
-      ),
+                  ),
+          ),
+        );
+      },
     );
+  }
+
+  String _platformLabel(String raw) {
+    final k = raw.toLowerCase();
+    if (k == 'linkedin') return 'LinkedIn';
+    if (k == 'facebook') return 'Facebook';
+    if (k == 'instagram') return 'Instagram';
+    if (k == 'youtube') return 'YouTube';
+    if (k == 'twitter') return 'Twitter';
+    return 'Unknown Platform';
   }
 }

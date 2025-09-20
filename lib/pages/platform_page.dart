@@ -77,8 +77,9 @@ class _PlatformPageState extends State<PlatformPage> {
   }) {
     // OPT: 10s timeout + retry wrapper to avoid long UI stalls
     return withRetry<http.Response>(
-      () =>
-          http.get(uri, headers: headers).timeout(const Duration(seconds: 10)),
+      () => http.get(uri, headers: headers).timeout(
+            const Duration(seconds: 10),
+          ),
     );
   }
 

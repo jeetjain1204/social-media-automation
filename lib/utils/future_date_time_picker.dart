@@ -29,33 +29,49 @@ ThemeData pickerTheme(BuildContext context) {
     useMaterial3: true,
     colorScheme: scheme,
     dialogTheme: DialogThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: ButtonStyle(
         foregroundColor: MaterialStatePropertyAll(darkColor),
-        overlayColor: MaterialStatePropertyAll(darkColor.withOpacity(0.08)),
+        overlayColor: MaterialStatePropertyAll(
+          darkColor.withOpacity(0.08),
+        ),
         textStyle: const MaterialStatePropertyAll(
           TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
     ),
     datePickerTheme: DatePickerThemeData(
-      backgroundColor: lightColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      headerBackgroundColor: darkColor,
-      headerForegroundColor: lightColor,
-      dayOverlayColor: MaterialStatePropertyAll(lightColor.withOpacity(0.15)),
+      backgroundColor: whiteColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      headerBackgroundColor: lightColor,
+      headerForegroundColor: darkColor,
+      dayOverlayColor: MaterialStatePropertyAll(
+        lightColor.withOpacity(0.15),
+      ),
       todayForegroundColor: const MaterialStatePropertyAll(darkColor),
       todayBackgroundColor: MaterialStatePropertyAll(
         darkColor.withOpacity(0.12),
       ),
     ),
     timePickerTheme: TimePickerThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: lightColor,
-      dialBackgroundColor: lightColor.withOpacity(0.10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      backgroundColor: whiteColor,
+      dayPeriodColor: lightColor,
+      dayPeriodTextColor: darkColor,
+      hourMinuteColor: lightColor,
+      hourMinuteTextColor: darkColor,
       dialHandColor: darkColor,
+      dialTextColor: whiteColor,
+      dialBackgroundColor: lightColor,
+      timeSelectorSeparatorColor: MaterialStatePropertyAll(darkColor),
       entryModeIconColor: darkColor,
       hourMinuteTextStyle: TextStyle(
         fontSize: 26,

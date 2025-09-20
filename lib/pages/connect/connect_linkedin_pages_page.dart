@@ -220,7 +220,9 @@ class _VideoCard extends StatelessWidget {
             child: (controller == null || !(controller!.value.isInitialized))
                 ? Stack(
                     children: [
-                      Positioned.fill(child: Container(color: Colors.white)),
+                      Positioned.fill(
+                        child: Container(color: Colors.white),
+                      ),
                       Center(
                         child: Icon(
                           Icons.play_circle_fill,
@@ -320,7 +322,9 @@ class StepTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE0E6ED)),
+        border: Border.all(
+          color: const Color(0xFFE0E6ED),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

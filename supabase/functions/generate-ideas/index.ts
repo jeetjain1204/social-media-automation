@@ -882,7 +882,7 @@ serve(async (req) => {
               keyword_assist: o.customization?.keyword_assist || "",
               negative_elements: o.customization?.negative_elements || "",
             },
-          })),
+          }),),
         });
 
         // store in global cache

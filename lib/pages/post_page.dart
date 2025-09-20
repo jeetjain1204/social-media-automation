@@ -2,12 +2,15 @@ import 'dart:convert';
 import 'package:blob/widgets/auto_skeleton.dart';
 import 'package:blob/utils/colors.dart';
 import 'package:blob/utils/my_snack_bar.dart';
+import 'package:blob/widgets/circular_progress_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shimmer/shimmer.dart';
+
+const double kDesktopBreak = 900.0;
 
 class PostPage extends StatefulWidget {
   const PostPage({super.key, required this.postId, required this.type});
@@ -33,9 +36,8 @@ class _PostPageState extends State<PostPage> {
   int totalUniqueImpressions = 0;
   List<String> xLabels = [];
 
-  // OPT: prevent duplicate fetches (hot reload / route re-entry)
-  bool metricsRequested = false; // OPT: follow naming rule (no underscores)
-  bool detailsRequested = false; // OPT
+  bool metricsRequested = false;
+  bool detailsRequested = false;
 
   @override
   void initState() {
@@ -43,7 +45,6 @@ class _PostPageState extends State<PostPage> {
     fetchPostDetails();
   }
 
-  // OPT: Lightweight retry with backoff + jitter for transient 5xx/429
   Future<T> withRetry<T>(
     Future<T> Function() fn, {
     int maxAttempts = 3,
@@ -58,7 +59,7 @@ class _PostPageState extends State<PostPage> {
         lastError = e;
         attempt++;
         if (attempt >= maxAttempts) break;
-        final factor = 1 << (attempt - 1); // 1,2
+        final factor = 1 << (attempt - 1);
         final jitterMs = baseDelay.inMilliseconds ~/ 2;
         final delay =
             Duration(milliseconds: baseDelay.inMilliseconds * factor) +
@@ -72,8 +73,8 @@ class _PostPageState extends State<PostPage> {
   }
 
   Future<void> fetchPostDetails() async {
-    if (detailsRequested) return; // OPT: guard multiple calls
-    detailsRequested = true; // OPT
+    if (detailsRequested) return;
+    detailsRequested = true;
 
     final client = Supabase.instance.client;
     final user = client.auth.currentUser;
@@ -93,7 +94,9 @@ class _PostPageState extends State<PostPage> {
               .eq('user_id', user.id)
               .eq('id', widget.postId)
               .single()
-              .timeout(const Duration(seconds: 12)),
+              .timeout(
+                const Duration(seconds: 12),
+              ),
         );
       } else {
         postRes = await withRetry<Map<String, dynamic>>(
@@ -103,13 +106,14 @@ class _PostPageState extends State<PostPage> {
               .eq('user_id', user.id)
               .eq('id', widget.postId)
               .single()
-              .timeout(const Duration(seconds: 12)),
+              .timeout(
+                const Duration(seconds: 12),
+              ),
         );
       }
 
       post = postRes;
 
-      // Fetch social account for org eligibility
       final social = await withRetry<Map<String, dynamic>?>(
         () => client
             .from('social_accounts')
@@ -118,7 +122,9 @@ class _PostPageState extends State<PostPage> {
             .eq('platform', 'linkedin')
             .eq('is_disconnected', false)
             .maybeSingle()
-            .timeout(const Duration(seconds: 12)),
+            .timeout(
+              const Duration(seconds: 12),
+            ),
       );
 
       final isOrg = (social?['account_type'] ?? '').toLowerCase() == 'org';
@@ -129,7 +135,7 @@ class _PostPageState extends State<PostPage> {
             isEligibleForStats = true;
           });
         }
-        await fetchMetrics(); // OPT: single call via guard
+        await fetchMetrics();
       } else {
         if (mounted) {
           setState(() {
@@ -184,14 +190,13 @@ class _PostPageState extends State<PostPage> {
   }
 
   Future<void> fetchMetrics() async {
-    if (metricsRequested) return; // OPT: guard
-    metricsRequested = true; // OPT
+    if (metricsRequested) return;
+    metricsRequested = true;
 
     final client = Supabase.instance.client;
     final session = client.auth.currentSession;
     final accessToken = session?.accessToken;
 
-    // Guard: need both org and post URNs
     final postUrn = (post?['post_urn'] as String?);
     final orgUrn = organizationUrn;
     if (postUrn == null || orgUrn == null) {
@@ -213,14 +218,15 @@ class _PostPageState extends State<PostPage> {
             'Authorization': 'Bearer $accessToken',
             'Content-Type': 'application/json',
           },
-        ).timeout(const Duration(seconds: 12)),
+        ).timeout(
+          const Duration(seconds: 12),
+        ),
       );
 
       if (response.status == 200 && response.data != null) {
         final List<dynamic> analytics =
             response.data is String ? jsonDecode(response.data) : response.data;
 
-        // Reset data
         viewsData = 0;
         likesData = 0;
         sharesData = 0;
@@ -230,7 +236,6 @@ class _PostPageState extends State<PostPage> {
         totalUniqueImpressions = 0;
 
         for (final bucket in analytics) {
-          // NOTE: Keep original behavior (values overwritten by the last bucket)
           viewsData = (bucket['views'] ?? 0) as int;
           likesData = (bucket['likes'] ?? 0) as int;
           sharesData = (bucket['shares'] ?? 0) as int;
@@ -256,10 +261,8 @@ class _PostPageState extends State<PostPage> {
     return input
         .toLowerCase()
         .split(' ')
-        .map(
-          (word) =>
-              word.isEmpty ? '' : word[0].toUpperCase() + word.substring(1),
-        )
+        .map((word) =>
+            word.isEmpty ? '' : word[0].toUpperCase() + word.substring(1))
         .join(' ');
   }
 
@@ -269,8 +272,8 @@ class _PostPageState extends State<PostPage> {
       return const Scaffold(body: Center(child: Text('Post not found')));
     } else if (post == null) {
       return const Scaffold(
-        backgroundColor: const Color(0xFFFBFBFF),
-        body: const _PostDetailsSkeleton(),
+        backgroundColor: Color(0xFFFBFBFF),
+        body: PostDetailsSkeleton(),
       );
     }
 
@@ -311,7 +314,6 @@ class _PostPageState extends State<PostPage> {
       'comments': commentsData,
     };
 
-    // OPT: precompute text styles to avoid repeated GoogleFonts calls
     final inter600_16 = GoogleFonts.inter(
       fontSize: 16,
       fontWeight: FontWeight.w600,
@@ -334,7 +336,6 @@ class _PostPageState extends State<PostPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFFBFBFF),
-      // OPT: Single scrollable with slivers (no nested scroll)
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
@@ -347,17 +348,13 @@ class _PostPageState extends State<PostPage> {
                     IconButton(
                       icon: const Icon(Icons.arrow_back_ios_new_rounded),
                       onPressed: () {
-                        if (context.canPop()) {
-                          context.pop();
-                        }
+                        if (context.canPop()) context.pop();
                       },
                     ),
                   const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 14,
-                    ),
+                        horizontal: 20, vertical: 14),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
                       color: Colors.white,
@@ -382,9 +379,7 @@ class _PostPageState extends State<PostPage> {
                         const Spacer(),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 6,
-                          ),
+                              horizontal: 14, vertical: 6),
                           decoration: BoxDecoration(
                             color: statusColor.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(50),
@@ -400,65 +395,103 @@ class _PostPageState extends State<PostPage> {
             ),
           ),
 
-          // Image + Caption block
+          // Responsive Image + Caption
           SliverToBoxAdapter(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final double width = constraints.maxWidth;
+                final w = constraints.maxWidth;
+                final isDesktop = w >= kDesktopBreak;
+
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (imageUrlVal != null)
-                        Container(
-                          width: width * 0.32,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: darkColor.withOpacity(0.2),
+                  child: isDesktop
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (imageUrlVal != null)
+                              Container(
+                                width: w * 0.32,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: darkColor.withOpacity(0.2),
+                                  ),
+                                ),
+                                child: Semantics(
+                                  label: 'Post image',
+                                  image: true,
+                                  child: PostImage(imageUrl: imageUrlVal),
+                                ),
+                              ),
+                            if (imageUrlVal != null) const SizedBox(width: 24),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: darkColor.withOpacity(0.2),
+                                  ),
+                                ),
+                                child: Text(caption, style: interBody),
+                              ),
                             ),
-                          ),
-                          child: Semantics(
-                            label: 'Post image',
-                            image: true,
-                            child: _PostImage(
-                              imageUrl: imageUrlVal,
-                            ), // OPT: extracted widget
-                          ),
-                        ),
-                      if (imageUrlVal != null) const SizedBox(width: 24),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: darkColor.withOpacity(0.2),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (imageUrlVal != null)
+                              Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: darkColor.withOpacity(0.2),
+                                  ),
+                                ),
+                                child: Semantics(
+                                  label: 'Post image',
+                                  image: true,
+                                  child: PostImage(
+                                    imageUrl: imageUrlVal,
+                                    mobile: true,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: darkColor.withOpacity(0.2),
+                                ),
+                              ),
+                              child: Text(caption, style: interBody),
                             ),
-                          ),
-                          child: Text(caption, style: interBody),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
                 );
               },
             ),
           ),
 
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 32),
+          ),
 
-          // Analytics section (skeleton while loading)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: isLoadingMetrics
-                  ? const _AnalyticsSkeleton() // OPT: shimmer
-                  : _AnalyticsGrid(
+                  ? const AnalyticsSkeleton()
+                  : AnalyticsGrid(
                       metricsMap: metricsMap,
                       totalEngagement: totalEngagement,
                       totalUniqueImpressions: totalUniqueImpressions,
@@ -467,7 +500,9 @@ class _PostPageState extends State<PostPage> {
           ),
 
           if (platform == 'linkedin')
-            const SliverToBoxAdapter(child: SizedBox(height: 40)),
+            const SliverToBoxAdapter(
+              child: SizedBox(height: 40),
+            ),
 
           if (platform == 'linkedin')
             SliverToBoxAdapter(
@@ -486,34 +521,36 @@ class _PostPageState extends State<PostPage> {
               ),
             ),
 
-          const SliverToBoxAdapter(child: SizedBox(height: 60)),
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 60),
+          ),
         ],
       ),
     );
   }
 }
 
-// OPT: Extracted post image widget
-class _PostImage extends StatelessWidget {
-  const _PostImage({required this.imageUrl});
+class PostImage extends StatelessWidget {
+  const PostImage({super.key, required this.imageUrl, this.mobile = false});
 
   final String imageUrl;
+  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: AspectRatio(
-        aspectRatio: 16 / 9,
+        aspectRatio: mobile ? 1 : 16 / 9,
         child: Image.network(imageUrl, fit: BoxFit.cover),
       ),
     );
   }
 }
 
-// OPT: Extracted analytics grid (no logic change)
-class _AnalyticsGrid extends StatelessWidget {
-  const _AnalyticsGrid({
+class AnalyticsGrid extends StatelessWidget {
+  const AnalyticsGrid({
+    super.key,
     required this.metricsMap,
     required this.totalEngagement,
     required this.totalUniqueImpressions,
@@ -525,95 +562,173 @@ class _AnalyticsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Wrap(
-          spacing: 24,
-          runSpacing: 24,
+    return LayoutBuilder(builder: (context, c) {
+      final w = c.maxWidth;
+      final gap = 24.0;
+      final isDesktop = w >= kDesktopBreak;
+
+      if (!isDesktop) {
+        return GridView(
+          shrinkWrap: true,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+          ),
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.all(4),
           children: [
-            _MetricCard(title: 'Views', value: metricsMap['views'].toString()),
-            _MetricCard(title: 'Likes', value: metricsMap['likes'].toString()),
-            _MetricCard(
-              title: 'Shares',
-              value: metricsMap['shares'].toString(),
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: MetricCard(
+                  title: 'Views', value: '${metricsMap['views'] ?? 0}'),
             ),
-            _MetricCard(
-              title: 'Comments',
-              value: metricsMap['comments'].toString(),
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: MetricCard(
+                  title: 'Likes', value: '${metricsMap['likes'] ?? 0}'),
             ),
-            _MetricCard(
-              title: 'Engagement',
-              value: totalEngagement.toString(),
-              wide: true,
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: MetricCard(
+                  title: 'Shares', value: '${metricsMap['shares'] ?? 0}'),
             ),
-            _MetricCard(
-              title: 'Unique Impressions',
-              value: totalUniqueImpressions.toString(),
-              wide: true,
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: MetricCard(
+                title: 'Comments',
+                value: '${metricsMap['comments'] ?? 0}',
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: MetricCard(title: 'Engagement', value: '$totalEngagement'),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: MetricCard(
+                title: 'Unique Impressions',
+                value: '$totalUniqueImpressions',
+              ),
             ),
           ],
         );
-      },
-    );
+      }
+
+      final cols = 4;
+      final tileW = (w - gap * (cols - 1)) / cols;
+
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: [
+          SizedBox(
+            width: tileW,
+            child: MetricCard(
+                title: 'Views', value: '${metricsMap['views'] ?? 0}'),
+          ),
+          SizedBox(
+            width: tileW,
+            child: MetricCard(
+                title: 'Likes', value: '${metricsMap['likes'] ?? 0}'),
+          ),
+          SizedBox(
+            width: tileW,
+            child: MetricCard(
+                title: 'Shares', value: '${metricsMap['shares'] ?? 0}'),
+          ),
+          SizedBox(
+            width: tileW,
+            child: MetricCard(
+                title: 'Comments', value: '${metricsMap['comments'] ?? 0}'),
+          ),
+          SizedBox(
+            width: tileW * 2 + gap,
+            child: MetricCard(title: 'Engagement', value: '$totalEngagement'),
+          ),
+          SizedBox(
+            width: tileW * 2 + gap,
+            child: MetricCard(
+                title: 'Unique Impressions', value: '$totalUniqueImpressions'),
+          ),
+        ],
+      );
+    });
   }
 }
 
-// OPT: Shimmer skeleton while analytics load (keeps layout stable; CLS↓)
-class _AnalyticsSkeleton extends StatelessWidget {
-  const _AnalyticsSkeleton();
+class AnalyticsSkeleton extends StatelessWidget {
+  const AnalyticsSkeleton({super.key});
 
   @override
   Widget build(BuildContext context) {
-    Widget card() => Shimmer.fromColors(
-          baseColor: Colors.grey.shade200,
-          highlightColor: Colors.grey.shade100,
-          period: const Duration(milliseconds: 1200),
-          child: Container(
-            height: 96,
-            width: MediaQuery.of(context).size.width * 0.31,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        );
+    return LayoutBuilder(builder: (context, c) {
+      final w = c.maxWidth;
+      final isDesktop = w >= kDesktopBreak;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double width = constraints.maxWidth;
-        return Wrap(
-          spacing: 24,
-          runSpacing: 24,
+      Widget card(double width) => Shimmer.fromColors(
+            baseColor: Colors.grey.shade200,
+            highlightColor: Colors.grey.shade100,
+            period: const Duration(milliseconds: 1200),
+            child: Container(
+              height: 96,
+              width: width,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          );
+
+      if (!isDesktop) {
+        return Column(
           children: [
-            card(),
-            card(),
-            card(),
-            card(),
-            Container(height: 96, width: width * 0.64, child: card()),
-            Container(height: 96, width: width * 0.64, child: card()),
+            card(w),
+            const SizedBox(height: 12),
+            card(w),
+            const SizedBox(height: 12),
+            card(w),
+            const SizedBox(height: 12),
+            card(w),
+            const SizedBox(height: 12),
+            card(w),
+            const SizedBox(height: 12),
+            card(w),
           ],
         );
-      },
-    );
+      }
+
+      final gap = 24.0;
+      final cols = 4;
+      final tileW = (w - gap * (cols - 1)) / cols;
+
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: [
+          card(tileW),
+          card(tileW),
+          card(tileW),
+          card(tileW),
+          card(tileW * 2 + gap),
+          card(tileW * 2 + gap),
+        ],
+      );
+    });
   }
 }
 
-class _MetricCard extends StatelessWidget {
+class MetricCard extends StatelessWidget {
   final String title;
   final String value;
-  final bool wide;
 
-  const _MetricCard({
+  const MetricCard({
+    super.key,
     required this.title,
     required this.value,
-    this.wide = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
     return Container(
-      width: wide ? (width * 0.64) : (width * 0.31),
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 28),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -639,7 +754,7 @@ class _MetricCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            value == 'null' || value == '0' || value.isEmpty ? '-' : value,
+            (value == 'null' || value == '0' || value.isEmpty) ? '-' : value,
             style: GoogleFonts.inter(
               fontWeight: FontWeight.w700,
               fontSize: 28,
@@ -652,113 +767,121 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class _PostDetailsSkeleton extends StatelessWidget {
-  const _PostDetailsSkeleton();
+class PostDetailsSkeleton extends StatelessWidget {
+  const PostDetailsSkeleton({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return AutoSkeleton(
-      enabled: true,
-      preserveSize: true,
-      clipPadding: const EdgeInsets.symmetric(vertical: 24),
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-          children: [
-            // Back button placeholder
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
+    final width = MediaQuery.sizeOf(context).width;
 
-            // Header bar (time, platform chip, status)
-            Container(
-              height: 56,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 28),
-
-            // Image + caption block
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth;
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Image card
-                    Container(
-                      width: width * 0.32,
-                      height: 220,
+    return width < 900
+        ? MyCircularProgressIndicator()
+        : AutoSkeleton(
+            enabled: true,
+            preserveSize: true,
+            clipPadding: const EdgeInsets.symmetric(vertical: 24),
+            child: SafeArea(
+              child: ListView(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: darkColor.withOpacity(0.2)),
                       ),
                     ),
-                    const SizedBox(width: 24),
-
-                    // Caption card
-                    Expanded(
-                      child: Container(
-                        height: 220,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: darkColor.withOpacity(0.2)),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                );
-              },
+                  ),
+                  const SizedBox(height: 28),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final width = constraints.maxWidth;
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: width * 0.32,
+                            height: 220,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: darkColor.withOpacity(0.2),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            child: Container(
+                              height: 220,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: darkColor.withOpacity(0.2),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: buildMetricBlock(),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: buildMetricBlock(),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: buildMetricBlock(),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: buildMetricBlock(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 60),
+                ],
+              ),
             ),
-            const SizedBox(height: 32),
-
-            // Analytics cards row (4 blocks)
-            Row(
-              children: [
-                Expanded(child: _metricBlock()),
-                const SizedBox(width: 16),
-                Expanded(child: _metricBlock()),
-                const SizedBox(width: 16),
-                Expanded(child: _metricBlock()),
-                const SizedBox(width: 16),
-                Expanded(child: _metricBlock()),
-              ],
-            ),
-
-            const SizedBox(height: 60),
-          ],
-        ),
-      ),
-    );
+          );
   }
 
-  Widget _metricBlock() {
+  Widget buildMetricBlock() {
     return Container(
       height: 100,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: darkColor.withOpacity(0.2)),
+        border: Border.all(
+          color: darkColor.withOpacity(0.2),
+        ),
       ),
     );
   }
