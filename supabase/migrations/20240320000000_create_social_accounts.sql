@@ -15,7 +15,12 @@ create table if not exists public.social_accounts (
 -- Enable RLS
 alter table public.social_accounts enable row level security;
 
--- Create policies
+-- Create policies (drop first if they exist)
+drop policy if exists "Users can view their own social accounts" on public.social_accounts;
+drop policy if exists "Users can insert their own social accounts" on public.social_accounts;
+drop policy if exists "Users can update their own social accounts" on public.social_accounts;
+drop policy if exists "Users can delete their own social accounts" on public.social_accounts;
+
 create policy "Users can view their own social accounts"
   on public.social_accounts for select
   using (auth.uid() = user_id);

@@ -591,23 +591,31 @@ CREATE OR REPLACE FUNCTION "public"."get_social_connection_status"("user_uuid" "
     AS $$
 DECLARE
     result JSON;
-    connection_count INT;
-    needs_reconnect_count INT;
+    has_linkedin BOOLEAN;
+    needs_reconnect BOOLEAN;
 BEGIN
-    SELECT 
-        COUNT(*) as total_connections,
-        COUNT(*) FILTER (WHERE needs_reconnect = true OR connected_at < NOW() - INTERVAL '50 days') as needs_reconnect
-    INTO connection_count, needs_reconnect_count
-    FROM social_accounts 
-    WHERE user_id = user_uuid 
-    AND is_disconnected = false;
+    -- Check if LinkedIn is connected
+    SELECT EXISTS(
+        SELECT 1 FROM social_accounts 
+        WHERE user_id = user_uuid 
+        AND is_disconnected = false
+        AND platform = 'linkedin'
+        AND access_token IS NOT NULL
+    ) INTO has_linkedin;
+    
+    -- Check if LinkedIn needs reconnection
+    SELECT EXISTS(
+        SELECT 1 FROM social_accounts 
+        WHERE user_id = user_uuid 
+        AND is_disconnected = false
+        AND platform = 'linkedin'
+        AND (needs_reconnect = true OR connected_at < NOW() - INTERVAL '50 days')
+    ) INTO needs_reconnect;
     
     SELECT json_build_object(
-        'has_connections', connection_count > 0,
-        'connection_count', connection_count,
-        'needs_reconnect', needs_reconnect_count > 0,
-        'needs_reconnect_count', needs_reconnect_count,
-        'is_connected', connection_count > 0 AND needs_reconnect_count = 0
+        'has_connections', has_linkedin,
+        'needs_reconnect', needs_reconnect,
+        'is_connected', has_linkedin AND NOT needs_reconnect
     ) INTO result;
     
     RETURN result;

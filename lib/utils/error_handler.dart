@@ -130,15 +130,15 @@ class ErrorHandler {
   static String _getDatabaseErrorMessage(PostgrestException error) {
     switch (error.code) {
       case '23505':
-        return 'This information already exists. Please use different details.';
+        return 'error: ${error.message}, This information already exists. Please use different details.';
       case '23503':
-        return 'Cannot delete this item as it is being used elsewhere.';
+        return 'error: ${error.message}, Cannot delete this item as it is being used elsewhere.';
       case '23502':
-        return 'Required information is missing. Please fill all fields.';
+        return 'error: ${error.message}, Required information is missing. Please fill all fields.';
       case '42P01':
-        return 'Database error. Please contact support.';
+        return 'error: ${error.message}, Database error. Please contact support.';
       default:
-        return 'Database operation failed. Please try again.';
+        return 'error: ${error.message}, Database operation failed. Please try again.';
     }
   }
 

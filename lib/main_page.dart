@@ -90,6 +90,8 @@ class MainPageState extends State<MainPage> {
         () => DatabaseService.getUserDashboardData(user.id),
       );
 
+      print('dashboardData: $dashboardData');
+
       if (dashboardData != null) {
         // Process subscription status
         final subscription =
@@ -106,16 +108,15 @@ class MainPageState extends State<MainPage> {
         }
       }
 
+      // TEMPORARILY DISABLED: RPC function has issues
       // Also check social connection status for additional validation
       final socialStatus = await NetworkOptimizer.deduplicatedRequest(
         'social_status_${user.id}',
         () => DatabaseService.getSocialConnectionStatus(user.id),
       );
 
-      if (socialStatus != null) {
-        _processSocialConnectionStatus(socialStatus);
-      }
-
+      // if (socialStatus != null) {
+      _processSocialConnectionStatus(socialStatus!);
       doneOne();
     } catch (e) {
       debugPrint('Error loading user data: $e');
@@ -203,16 +204,17 @@ class MainPageState extends State<MainPage> {
         postFrame(
           () => mySnackBar(
             context,
-            "You haven't connected any platform yet.",
+            "You need to connect LinkedIn to continue.",
           ),
         );
-        nav('/connect');
+        nav('/connect/linkedin');
       }
       return;
     }
 
     final now = DateTime.now().toUtc();
-    bool atLeastOneConnected = false;
+    bool linkedinConnected = false;
+    print('rows: $rows');
 
     for (final row in rows) {
       final platform = (row['platform'] as String?) ?? '';
@@ -220,38 +222,41 @@ class MainPageState extends State<MainPage> {
       final isConnected =
           accessToken != null && accessToken.toString().isNotEmpty;
 
-      if (isConnected) atLeastOneConnected = true;
+      // Only check LinkedIn connection
+      if (platform == 'linkedin' && isConnected) {
+        linkedinConnected = true;
 
-      final needsReconnect = row['needs_reconnect'] == true;
+        final needsReconnect = row['needs_reconnect'] == true;
 
-      final connectedAtIso = row['connected_at'] as String?;
-      final connectedAt = connectedAtIso == null
-          ? null
-          : DateTime.tryParse(connectedAtIso)?.toUtc();
-      final daysOld =
-          connectedAt == null ? 999 : now.difference(connectedAt).inDays;
+        final connectedAtIso = row['connected_at'] as String?;
+        final connectedAt = connectedAtIso == null
+            ? null
+            : DateTime.tryParse(connectedAtIso)?.toUtc();
+        final daysOld =
+            connectedAt == null ? 999 : now.difference(connectedAt).inDays;
 
-      if ((daysOld > 50 || needsReconnect) && mounted) {
-        postFrame(
-          () => mySnackBar(
-            context,
-            'Your $platform connection is over 50 days old or expired. Please reconnect',
-          ),
-        );
+        if ((daysOld > 50 || needsReconnect) && mounted) {
+          postFrame(
+            () => mySnackBar(
+              context,
+              'Your LinkedIn connection is over 50 days old or expired. Please reconnect',
+            ),
+          );
 
-        nav(platform == 'linkedin' ? '/connect/linkedin' : '/connect/meta');
-        return;
+          nav('/connect/linkedin');
+          return;
+        }
       }
     }
 
-    if (!atLeastOneConnected && mounted) {
+    if (!linkedinConnected && mounted) {
       postFrame(
         () => mySnackBar(
           context,
-          "You haven't connected any platform yet.",
+          "You need to connect LinkedIn to continue.",
         ),
       );
-      nav('/connect');
+      nav('/connect/linkedin');
       return;
     }
   }
@@ -259,31 +264,29 @@ class MainPageState extends State<MainPage> {
   /// Process social connection status from optimized RPC
   void _processSocialConnectionStatus(Map<String, dynamic> status) {
     // Additional validation using the optimized social connection status
-    final hasValidConnections =
-        status['has_valid_connections'] as bool? ?? false;
+    final hasConnections = status['has_connections'] as bool? ?? false;
     final needsReconnect = status['needs_reconnect'] as bool? ?? false;
-    final expiredPlatforms = status['expired_platforms'] as List? ?? [];
 
-    if (!hasValidConnections && mounted) {
+    // Only check if LinkedIn is connected, not any platform
+    if (!hasConnections && mounted) {
       postFrame(
         () => mySnackBar(
           context,
-          "You haven't connected any platform yet.",
+          "You need to connect LinkedIn to continue.",
         ),
       );
-      nav('/connect');
+      nav('/connect/linkedin');
       return;
     }
 
-    if (needsReconnect && expiredPlatforms.isNotEmpty && mounted) {
-      final platform = expiredPlatforms.first as String;
+    if (needsReconnect && mounted) {
       postFrame(
         () => mySnackBar(
           context,
-          'Your $platform connection is expired. Please reconnect',
+          'Your LinkedIn connection is expired. Please reconnect',
         ),
       );
-      nav(platform == 'linkedin' ? '/connect/linkedin' : '/connect/meta');
+      nav('/connect/linkedin');
       return;
     }
   }

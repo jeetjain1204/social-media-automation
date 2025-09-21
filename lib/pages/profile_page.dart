@@ -1060,11 +1060,14 @@ class _ProfilePageState extends State<ProfilePage> {
                                                   }
                                                 }).eq('id', brandKit!['id']);
                                                 if (!mounted) return;
-                                                setState(() =>
-                                                    brandKit!['colors']
-                                                        ['background'] = hex);
-                                                mySnackBar(context,
-                                                    'BACKGROUND Color Updated!');
+                                                setState(
+                                                  () => brandKit!['colors']
+                                                      ['background'] = hex,
+                                                );
+                                                mySnackBar(
+                                                  context,
+                                                  'BACKGROUND Color Updated!',
+                                                );
                                               },
                                             );
                                           },

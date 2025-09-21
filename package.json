@@ -1,4 +1,3 @@
-# package.json
 {
   "scripts": {
     "db:sync": "supabase db diff -f cursor_edit && supabase db dump --schema public,auth,storage,extensions -f supabase/schemas/schema.latest.sql && supabase gen types typescript --project-id $SUPABASE_PROJECT_REF > src/types/database.types.ts"

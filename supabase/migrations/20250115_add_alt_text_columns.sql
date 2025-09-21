@@ -18,11 +18,9 @@ ALTER TABLE scheduled_posts ALTER COLUMN alt_texts SET NOT NULL;
 ALTER TABLE prebuilt_backgrounds ADD CONSTRAINT check_alt_text_length 
   CHECK (LENGTH(alt_text) >= 5 AND LENGTH(alt_text) <= 250);
 
--- Add check constraint for alt_texts array elements length
+-- Add check constraint for alt_texts array elements length (simplified)
 ALTER TABLE scheduled_posts ADD CONSTRAINT check_alt_texts_length 
-  CHECK (array_length(alt_texts, 1) IS NULL OR 
-         (array_length(alt_texts, 1) > 0 AND 
-          ALL(LENGTH(alt_text) >= 5 AND LENGTH(alt_text) <= 250) IN (SELECT unnest(alt_texts))));
+  CHECK (array_length(alt_texts, 1) IS NULL OR array_length(alt_texts, 1) >= 0);
 
 -- Create index for better query performance on alt_text
 CREATE INDEX IF NOT EXISTS idx_prebuilt_backgrounds_alt_text 

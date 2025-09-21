@@ -154,6 +154,7 @@ class DatabaseService {
       // Note: This assumes brand_kit table exists in brand_kit schema
       // If it doesn't exist, this will return null gracefully
       final response = await _client
+          .schema('brand_kit')
           .from('brand_kits')
           .select('brand_name, brand_logo_path')
           .eq('user_id', userId)
@@ -202,7 +203,8 @@ class DatabaseService {
 
   /// Get social connection status using optimized RPC with fallback
   static Future<Map<String, dynamic>?> getSocialConnectionStatus(
-      String userId) async {
+    String userId,
+  ) async {
     final cacheKey = 'social_status_$userId';
 
     // Check cache first
@@ -217,12 +219,20 @@ class DatabaseService {
         final stopwatch = Stopwatch()..start();
 
         // Use RPC function (exists in baseline schema)
-        final response = await _client.rpc('get_social_connection_status',
-            params: {'user_uuid': userId}).timeout(const Duration(seconds: 3));
+        final response = await _client.rpc(
+          'get_social_connection_status',
+          params: {'user_uuid': userId},
+        ).timeout(
+          const Duration(
+            seconds: 3,
+          ),
+        );
 
         stopwatch.stop();
         PerformanceBaseline.trackDatabaseQuery(
-            'get_social_connection_status', stopwatch.elapsed);
+          'get_social_connection_status',
+          stopwatch.elapsed,
+        );
 
         final result = response as Map<String, dynamic>?;
         if (result != null) {
@@ -313,6 +323,7 @@ class DatabaseService {
         if (brandKitUpdates != null && brandKitUpdates.isNotEmpty) {
           try {
             await _client
+                .schema('brand_kit')
                 .from('brand_kits')
                 .update(brandKitUpdates)
                 .eq('user_id', userId)
