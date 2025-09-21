@@ -1,0 +1,8 @@
+{
+    "imports": {
+      "std/": "https://deno.land/std@0.224.0/",
+      "supabase": "npm:@supabase/supabase-js@^2"
+    },
+    "nodeModulesDir": "auto",
+    "lock": false
+  }

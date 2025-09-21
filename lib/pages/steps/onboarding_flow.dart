@@ -27,7 +27,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   int currentStep = 0;
   bool ready = false;
-  late List<Widget Function(BrandProfileDraft)> flowSteps;
+  List<Widget Function(BrandProfileDraft)> flowSteps = [];
 
   // FIXED: Use atomic operations to prevent race conditions
   void next() {
@@ -355,7 +355,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                       switchOutCurve: Curves.easeInCubic,
                       child: KeyedSubtree(
                         key: ValueKey<int>(currentStep),
-                        child: flowSteps[currentStep](d),
+                        child: flowSteps.isNotEmpty &&
+                                currentStep < flowSteps.length
+                            ? flowSteps[currentStep](d)
+                            : const SizedBox.shrink(),
                       ),
                     ),
             ),

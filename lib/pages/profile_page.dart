@@ -846,11 +846,14 @@ class _ProfilePageState extends State<ProfilePage> {
 
                         // -------- Brand Kit --------
                         if (brandKit == null)
-                          MyButton(
-                            width: isDesktop ? (w * 0.4) : w,
-                            text: 'Create your Brand Kit',
-                            onTap: () async => createBrandKit(),
-                            isLoading: isCreatingBrandKit,
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: MyButton(
+                              width: isDesktop ? (w * 0.2) : w,
+                              text: 'Create your Brand Kit',
+                              onTap: () async => createBrandKit(),
+                              isLoading: isCreatingBrandKit,
+                            ),
                           )
                         else
                           Column(

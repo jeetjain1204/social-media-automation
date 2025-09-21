@@ -34,7 +34,7 @@ BEGIN
         ),
         'brand_kit', (
             SELECT row_to_json(bk) 
-            FROM brand_kit.brand_kits bk 
+            FROM brand_kits bk 
             WHERE bk.user_id = user_uuid
         )
     ) INTO result;
@@ -74,7 +74,7 @@ BEGIN
     
     -- Update brand kit if provided
     IF brand_kit_updates IS NOT NULL THEN
-        UPDATE brand_kit.brand_kits 
+        UPDATE brand_kits 
         SET 
             brand_name = COALESCE((brand_kit_updates->>'brand_name')::text, brand_name),
             brand_logo_path = COALESCE((brand_kit_updates->>'brand_logo_path')::text, brand_logo_path),

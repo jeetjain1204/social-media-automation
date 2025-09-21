@@ -1,6 +1,7 @@
 // main.dart
 import 'dart:async';
 import 'package:blob/platform/url_strategy_stub.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as path;
@@ -60,30 +61,61 @@ import 'package:blob/pages/post_page.dart' deferred as post;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url: AppConfig.supabaseUrl,
-    anonKey: AppConfig.supabaseAnonKey,
-    authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
-  );
+  try {
+    await Supabase.initialize(
+      url: AppConfig.supabaseUrl,
+      anonKey: AppConfig.supabaseAnonKey,
+      authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
+    );
 
-  GoRouter.optionURLReflectsImperativeAPIs = true;
+    GoRouter.optionURLReflectsImperativeAPIs = true;
 
-  configureUrlStrategy();
+    configureUrlStrategy();
 
-  runApp(
-    MultiProvider(
-      providers: [
-        // FIXED: Use unified app state provider instead of 5 separate providers
-        ChangeNotifierProvider(
-          create: (_) => AppStateProvider(),
+    runApp(
+      MultiProvider(
+        providers: [
+          // FIXED: Use unified app state provider instead of 5 separate providers
+          ChangeNotifierProvider(
+            create: (_) => AppStateProvider(),
+          ),
+          ChangeNotifierProvider(
+            create: (_) => BrandProfileDraft(),
+          ),
+        ],
+        child: const MyApp(),
+      ),
+    );
+  } catch (e) {
+    // Handle initialization errors
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Failed to initialize app: $e'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    // Reload the page
+                    if (kIsWeb) {
+                      // ignore: avoid_web_libraries_in_flutter
+                      // html.window.location.reload();
+                    }
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
         ),
-        ChangeNotifierProvider(
-          create: (_) => BrandProfileDraft(),
-        ),
-      ],
-      child: const MyApp(),
-    ),
-  );
+      ),
+    );
+  }
 }
 
 // ---------- Small helpers ----------

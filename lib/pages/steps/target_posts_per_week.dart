@@ -101,12 +101,13 @@ class _TargetPostPerWeekPageState extends State<TargetPostPerWeekPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: LayoutBuilder(
-        builder: (_, c) {
-          final maxW = c.maxWidth; // OPT
+        builder: (_, constraints) {
+          final width = constraints.maxWidth; // OPT
+
           return Center(
             child: SingleChildScrollView(
               padding: EdgeInsets.symmetric(
-                horizontal: maxW * 0.05,
+                horizontal: width * 0.0125,
                 vertical: 48, // --space-6
               ),
               child: Column(
@@ -127,21 +128,18 @@ class _TargetPostPerWeekPageState extends State<TargetPostPerWeekPage> {
                   const SizedBox(height: 32),
 
                   // Input Field
-                  SizedBox(
-                    width: maxW * 0.2, // OPT: single source for width calc
-                    child: MyTextField(
-                      width: maxW * 0.015, // keep your existing logic
-                      controller: targetPostsPerWeekController,
-                      hintText: 'Target Posts Per Week',
-                      type: TextInputType.number,
-                    ),
+                  MyTextField(
+                    width: 200, // keep your existing logic
+                    controller: targetPostsPerWeekController,
+                    hintText: 'Target Posts Per Week',
+                    type: TextInputType.number,
                   ),
 
                   const SizedBox(height: 48),
 
                   // Continue Button
                   MyButton(
-                    width: maxW * 0.25,
+                    width: width * 0.25,
                     text: 'Continue',
                     isLoading: false,
                     onTap: () {

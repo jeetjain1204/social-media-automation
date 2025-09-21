@@ -26,7 +26,7 @@ WHERE is_trial_active = true;
 
 -- Brand kits indexes
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_brand_kits_user_id 
-ON brand_kit.brand_kits(user_id);
+ON brand_kits(user_id);
 
 -- History/posts indexes (if table exists)
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_posts_user_id_created 
@@ -36,4 +36,4 @@ ON posts(user_id, created_at DESC) WHERE user_id IS NOT NULL;
 ANALYZE brand_profiles;
 ANALYZE social_accounts;
 ANALYZE user_subscription_status;
-ANALYZE brand_kit.brand_kits;
+ANALYZE brand_kits;

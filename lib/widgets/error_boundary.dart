@@ -40,57 +40,60 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
   }
 
   Widget _buildErrorWidget() {
-    return Scaffold(
-      backgroundColor: lightColor,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: 64,
-                color: darkColor,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Something went wrong',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: lightColor,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  size: 64,
                   color: darkColor,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _error?.message ?? 'An unexpected error occurred',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: darkColor.withOpacity(0.8),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _hasError = false;
-                    _error = null;
-                  });
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: darkColor,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 32,
-                    vertical: 16,
+                const SizedBox(height: 24),
+                Text(
+                  'Something went wrong',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: darkColor,
                   ),
+                  textAlign: TextAlign.center,
                 ),
-                child: const Text('Try Again'),
-              ),
-            ],
+                const SizedBox(height: 16),
+                Text(
+                  _error?.message ?? 'An unexpected error occurred',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: darkColor.withOpacity(0.8),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _hasError = false;
+                      _error = null;
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: darkColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 16,
+                    ),
+                  ),
+                  child: const Text('Try Again'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -1,0 +1,15 @@
+---
+description: Keep Supabase schema dump and types in sync after SQL edits
+globs:
+  - "supabase/schemas/**/*.sql"
+  - "supabase/migrations/**/*.sql"
+  - "**/*.sql"
+alwaysApply: true
+---
+
+After you edit or create any SQL or Supabase migration, immediately call the MCP tool `run-command` to run:
+npm run db:sync
+
+If it fails, surface stderr and suggest fixes. After success, include
+supabase/schemas/schema.latest.sql and src/types/database.types.ts
+in your next edit context.
